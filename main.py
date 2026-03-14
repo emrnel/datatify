@@ -3,7 +3,9 @@
 import os
 import json
 import sqlite3
+import time
 import traceback
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeout
 from contextlib import contextmanager
 from pathlib import Path
 
@@ -52,10 +54,28 @@ def _get_gemini():
         return None
 
 
+GEMINI_TIMEOUT = 20  # seconds
+
+
+def _call_gemini_sync(client, prompt: str) -> dict | None:
+    """Blocking Gemini call — runs inside a thread with timeout."""
+    response = client.models.generate_content(
+        model="gemini-2.0-flash",
+        contents=prompt,
+    )
+    text = response.text.strip()
+    if text.startswith("```"):
+        text = text.split("\n", 1)[1] if "\n" in text else text[3:]
+        if text.endswith("```"):
+            text = text[:-3]
+    return json.loads(text)
+
+
 def gemini_character_analysis(metrics: dict) -> dict | None:
-    """Call Gemini to generate a creative character analysis from metrics."""
+    """Call Gemini with a strict timeout. Returns None on any failure."""
     client = _get_gemini()
     if not client:
+        print("[GEMINI] No API key or client init failed — skipping")
         return None
 
     summary = {
@@ -101,18 +121,19 @@ Yanıtını SADECE aşağıdaki JSON formatında ver (başka metin ekleme):
   "prediction": "Müzik zevkine dayalı yaratıcı bir tahmin (1-2 cümle, Türkçe)"
 }}"""
 
+    print(f"[GEMINI] Calling Gemini (timeout={GEMINI_TIMEOUT}s)...")
+    t0 = time.time()
     try:
-        response = client.models.generate_content(
-            model="gemini-2.0-flash",
-            contents=prompt,
-        )
-        text = response.text.strip()
-        if text.startswith("```"):
-            text = text.split("\n", 1)[1] if "\n" in text else text[3:]
-            if text.endswith("```"):
-                text = text[:-3]
-        return json.loads(text)
-    except Exception:
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            future = pool.submit(_call_gemini_sync, client, prompt)
+            result = future.result(timeout=GEMINI_TIMEOUT)
+        print(f"[GEMINI] OK in {time.time()-t0:.1f}s")
+        return result
+    except FuturesTimeout:
+        print(f"[GEMINI] TIMEOUT after {GEMINI_TIMEOUT}s — skipping AI analysis")
+        return None
+    except Exception as e:
+        print(f"[GEMINI] ERROR in {time.time()-t0:.1f}s: {e}")
         traceback.print_exc()
         return None
 
@@ -225,31 +246,43 @@ async def landing():
 @app.post("/analyze", response_class=HTMLResponse)
 async def analyze_files(files: list[UploadFile] = File(...)):
     """Accept one or more Spotify JSON files, run analysis + Gemini, return dashboard."""
+    t_start = time.time()
     all_records: list[dict] = []
+    file_names = []
     for f in files:
         try:
             raw = await f.read()
             data = json.loads(raw.decode("utf-8"))
             if isinstance(data, list):
                 all_records.extend(data)
-        except Exception:
+                file_names.append(f"{f.filename} ({len(data)} records)")
+        except Exception as e:
+            print(f"[UPLOAD] Failed to parse {f.filename}: {e}")
             continue
+
+    print(f"[UPLOAD] {len(files)} files → {len(all_records)} total records")
+    for fn in file_names:
+        print(f"  · {fn}")
 
     if not all_records:
         raise HTTPException(status_code=400, detail="Geçerli Spotify JSON dosyası bulunamadı.")
 
+    print("[ANALYZE] Starting analysis...")
+    t1 = time.time()
     metrics = analyze(all_records)
+    print(f"[ANALYZE] Done in {time.time()-t1:.1f}s")
+
     if "error" in metrics:
         raise HTTPException(status_code=400, detail=metrics["error"])
 
-    # Gemini character analysis (non-blocking — skipped if unavailable)
+    # Gemini (with timeout — dashboard works without it)
     ai = gemini_character_analysis(metrics)
     if ai:
         metrics["gemini_analysis"] = ai
 
-    # Render dashboard
     template = (TEMPLATES / "dashboard.html").read_text(encoding="utf-8")
     html = template.replace("SPOTIFY_DATA_PLACEHOLDER", json.dumps(metrics, ensure_ascii=False))
+    print(f"[DONE] Total request time: {time.time()-t_start:.1f}s")
     return HTMLResponse(content=html)
 
 

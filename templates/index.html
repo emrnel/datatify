@@ -86,8 +86,8 @@ h1 .accent{background:linear-gradient(135deg,var(--green),var(--cyan));-webkit-b
 
   <div class="upload-zone" id="dropZone">
     <span class="icon">📂</span>
-    <div class="main-text">JSON dosyalarını sürükle & bırak</div>
-    <div class="sub-text">veya tıklayarak seç — Streaming_History_Audio_*.json</div>
+    <div class="main-text">Tüm JSON dosyalarını sürükle & bırak</div>
+    <div class="sub-text">Klasördeki <strong>tüm</strong> Streaming_History_Audio_*.json dosyalarını birden seç<br>(birden fazla dosya seçmek için Ctrl tuşuna basılı tut)</div>
     <input type="file" id="fileInput" multiple accept=".json">
     <div class="file-list" id="fileList"></div>
   </div>
@@ -195,13 +195,21 @@ btn.addEventListener('click', async () => {
   const fd = new FormData();
   selectedFiles.forEach(f => fd.append('files', f));
 
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 120000);
+
   try {
     loadingText.textContent = 'Analiz ediliyor & AI karakter profili oluşturuluyor...';
-    const res = await fetch('/analyze', { method: 'POST', body: fd });
+    const res = await fetch('/analyze', {
+      method: 'POST',
+      body: fd,
+      signal: controller.signal,
+    });
+    clearTimeout(timeoutId);
 
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
-      throw new Error(err.detail || 'Analiz başarısız oldu.');
+      throw new Error(err.detail || `Sunucu hatası (${res.status})`);
     }
 
     loadingText.textContent = 'Dashboard hazırlanıyor...';
@@ -210,10 +218,15 @@ btn.addEventListener('click', async () => {
     document.write(html);
     document.close();
   } catch (e) {
+    clearTimeout(timeoutId);
     loading.classList.remove('active');
     btn.style.display = '';
     dropZone.style.display = '';
-    showError(e.message);
+    if (e.name === 'AbortError') {
+      showError('Zaman aşımı — dosyalar çok büyük olabilir. Daha az dosya ile deneyin veya lokal çalıştırın.');
+    } else {
+      showError(e.message);
+    }
   }
 });
 </script>
