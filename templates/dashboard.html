@@ -123,6 +123,7 @@ nav a:hover{color:var(--text)}
 .ai-section{margin-top:2rem;background:linear-gradient(135deg,rgba(6,182,212,.06),rgba(168,85,247,.06));border:1px solid rgba(6,182,212,.15);border-radius:var(--radius);padding:2rem;position:relative;overflow:hidden}
 .ai-section::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,var(--cyan),var(--purple),var(--green));animation:shimmer 3s ease infinite}
 @keyframes shimmer{0%,100%{opacity:.5}50%{opacity:1}}
+@keyframes pulse{0%,100%{transform:scale(1);opacity:.7}50%{transform:scale(1.15);opacity:1}}
 .ai-label{display:inline-flex;align-items:center;gap:.4rem;font-size:.7rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--cyan);margin-bottom:1rem;position:relative}
 .ai-title{font-size:1.6rem;font-weight:900;background:linear-gradient(135deg,var(--cyan),var(--purple));-webkit-background-clip:text;-webkit-text-fill-color:transparent;margin-bottom:1rem;position:relative}
 .ai-summary{color:var(--text);font-size:.95rem;line-height:1.7;margin-bottom:1.5rem;position:relative;opacity:.9}
@@ -353,6 +354,17 @@ if (ai) {
         </div>
       </div>
       ${ai.prediction ? `<div class="ai-prediction"><div class="pred-label">🔮 Tahmin</div><p>${ai.prediction}</p></div>` : ''}
+    </div>`;
+} else {
+  document.getElementById('ai-analysis-section').innerHTML = `
+    <div class="ai-section" style="text-align:center;padding:3rem 2rem">
+      <div class="ai-label">✦ AI Karakter Analizi — Gemini</div>
+      <div style="font-size:3rem;margin:1.5rem 0;animation:pulse 2.5s ease-in-out infinite;position:relative">🧠</div>
+      <div class="ai-title">Kişisel AI Analiziniz Burada Görünecek</div>
+      <div style="color:var(--muted);font-size:.9rem;max-width:440px;margin:0 auto;line-height:1.7;position:relative">
+        Gemini AI, dinleme verilerinizi psikolojik açıdan yorumlayarak size özel bir karakter analizi oluşturur.
+        <span style="display:block;margin-top:.75rem;font-size:.8rem;color:var(--dim)">Şu an API limiti dolmuş olabilir — bir süre sonra tekrar deneyin.</span>
+      </div>
     </div>`;
 }
 
