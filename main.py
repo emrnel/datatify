@@ -22,6 +22,7 @@ TEMPLATES = BASE_DIR / "templates"
 STATIC = BASE_DIR / "static"
 DB_PATH = os.environ.get("DB_PATH", str(BASE_DIR / "benchmark.db"))
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
+SKIP_GEMINI = os.environ.get("SKIP_GEMINI", "").strip().lower() in ("1", "true", "yes")
 
 app = FastAPI(title="Datatify — Listening DNA", version="2.0.0")
 app.add_middleware(
@@ -73,6 +74,9 @@ def _call_gemini_sync(client, prompt: str) -> dict | None:
 
 def gemini_character_analysis(metrics: dict) -> dict | None:
     """Call Gemini with a strict timeout. Returns None on any failure."""
+    if SKIP_GEMINI:
+        print("[GEMINI] SKIP_GEMINI=1 — not calling API")
+        return None
     client = _get_gemini()
     if not client:
         print("[GEMINI] No API key or client init failed — skipping")
