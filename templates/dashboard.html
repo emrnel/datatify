@@ -1,0 +1,610 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Spotify Listening DNA — Datatify</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#050505;--surface:#0f0f0f;--card:rgba(255,255,255,.04);
+  --card-border:rgba(255,255,255,.06);--card-hover:rgba(255,255,255,.08);
+  --green:#1db954;--green-glow:rgba(29,185,84,.35);--green-dim:rgba(29,185,84,.12);
+  --purple:#a855f7;--blue:#3b82f6;--pink:#ec4899;--orange:#f97316;--cyan:#06b6d4;
+  --text:#f0f0f0;--muted:#888;--dim:#555;
+  --radius:16px;--radius-sm:10px;
+}
+html{scroll-behavior:smooth}
+body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--text);overflow-x:hidden;-webkit-font-smoothing:antialiased}
+::selection{background:var(--green);color:#000}
+a{color:var(--green);text-decoration:none}
+
+.bg-glow{position:fixed;top:0;left:0;width:100%;height:100%;z-index:0;pointer-events:none;overflow:hidden}
+.bg-glow .orb{position:absolute;border-radius:50%;filter:blur(120px);opacity:.18;animation:orbFloat 20s ease-in-out infinite alternate}
+.orb.o1{width:600px;height:600px;background:var(--green);top:-10%;left:-5%;animation-delay:0s}
+.orb.o2{width:500px;height:500px;background:var(--purple);bottom:-10%;right:-5%;animation-delay:-7s}
+.orb.o3{width:400px;height:400px;background:var(--blue);top:40%;left:50%;animation-delay:-14s}
+@keyframes orbFloat{0%{transform:translate(0,0) scale(1)}50%{transform:translate(60px,-40px) scale(1.1)}100%{transform:translate(-30px,50px) scale(.95)}}
+
+.wrapper{position:relative;z-index:1;max-width:1200px;margin:0 auto;padding:0 1.5rem 4rem}
+
+nav{position:sticky;top:0;z-index:100;backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);background:rgba(5,5,5,.7);border-bottom:1px solid var(--card-border);padding:.75rem 0;margin-bottom:0}
+nav .inner{max-width:1200px;margin:0 auto;padding:0 1.5rem;display:flex;align-items:center;gap:2rem;overflow-x:auto}
+nav .logo{font-weight:800;font-size:1rem;white-space:nowrap;background:linear-gradient(135deg,var(--green),var(--cyan));-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+nav a{color:var(--muted);font-size:.8rem;font-weight:500;white-space:nowrap;transition:color .2s}
+nav a:hover{color:var(--text)}
+
+.hero{text-align:center;padding:6rem 0 4rem;position:relative}
+.hero .top-badge{display:inline-block;padding:.35rem 1rem;border-radius:100px;background:var(--green-dim);color:var(--green);font-size:.75rem;font-weight:600;letter-spacing:.04em;text-transform:uppercase;margin-bottom:1.5rem;animation:fadeUp .8s ease}
+.hero h1{font-size:clamp(2.5rem,6vw,4.5rem);font-weight:900;line-height:1.05;margin-bottom:1rem;animation:fadeUp .8s ease .1s both}
+.hero h1 .accent{background:linear-gradient(135deg,var(--green),var(--cyan));-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+.hero p{color:var(--muted);font-size:1.1rem;max-width:500px;margin:0 auto 2.5rem;animation:fadeUp .8s ease .2s both}
+.hero-stats{display:flex;justify-content:center;gap:3rem;flex-wrap:wrap;animation:fadeUp .8s ease .35s both}
+.hero-stat{text-align:center}
+.hero-stat .num{font-size:clamp(2rem,4vw,3.2rem);font-weight:800;background:linear-gradient(135deg,var(--green),#34d399);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+.hero-stat .label{font-size:.8rem;color:var(--muted);margin-top:.25rem}
+
+@keyframes fadeUp{from{opacity:0;transform:translateY(30px)}to{opacity:1;transform:translateY(0)}}
+@keyframes fadeIn{from{opacity:0}to{opacity:1}}
+
+.section{padding:3rem 0;opacity:0;transform:translateY(40px);transition:opacity .7s ease,transform .7s ease}
+.section.visible{opacity:1;transform:translateY(0)}
+.section-title{font-size:1.5rem;font-weight:700;margin-bottom:.5rem}
+.section-sub{color:var(--muted);font-size:.9rem;margin-bottom:2rem}
+
+.cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:1rem}
+.card{background:var(--card);border:1px solid var(--card-border);border-radius:var(--radius);padding:1.25rem 1.35rem;transition:all .3s ease;position:relative;overflow:hidden}
+.card:hover{background:var(--card-hover);border-color:rgba(255,255,255,.1);transform:translateY(-2px);box-shadow:0 8px 30px rgba(0,0,0,.3)}
+.card .icon{width:36px;height:36px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:1.1rem;margin-bottom:.75rem}
+.card .card-label{font-size:.7rem;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin-bottom:.4rem;font-weight:600}
+.card .card-value{font-size:1.65rem;font-weight:800;line-height:1.1}
+.card .card-desc{font-size:.78rem;color:var(--dim);margin-top:.35rem}
+.glow-green .card-value{color:var(--green)}
+.glow-purple .card-value{color:var(--purple)}
+.glow-blue .card-value{color:var(--blue)}
+.glow-pink .card-value{color:var(--pink)}
+.glow-orange .card-value{color:var(--orange)}
+.glow-cyan .card-value{color:var(--cyan)}
+
+.gauge-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:1.25rem}
+.gauge-card{background:var(--card);border:1px solid var(--card-border);border-radius:var(--radius);padding:1.5rem;text-align:center;transition:all .3s ease}
+.gauge-card:hover{background:var(--card-hover);transform:translateY(-2px)}
+.gauge-ring{position:relative;width:100px;height:100px;margin:0 auto .75rem}
+.gauge-ring svg{transform:rotate(-90deg)}
+.gauge-ring .track{fill:none;stroke:rgba(255,255,255,.06);stroke-width:6}
+.gauge-ring .fill{fill:none;stroke-width:6;stroke-linecap:round;transition:stroke-dashoffset 1.5s ease}
+.gauge-ring .center-val{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);font-size:1.3rem;font-weight:800}
+.gauge-label{font-size:.75rem;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;font-weight:600}
+.gauge-desc{font-size:.72rem;color:var(--dim);margin-top:.25rem}
+
+.chart-row{display:grid;grid-template-columns:1fr 1fr;gap:1.5rem}
+.chart-card{background:var(--card);border:1px solid var(--card-border);border-radius:var(--radius);padding:1.5rem;transition:all .3s ease}
+.chart-card:hover{border-color:rgba(255,255,255,.1)}
+.chart-card h3{font-size:.9rem;font-weight:600;margin-bottom:1rem}
+.chart-card canvas{width:100%!important}
+
+.list-card{background:var(--card);border:1px solid var(--card-border);border-radius:var(--radius);overflow:hidden}
+.list-item{display:flex;align-items:center;gap:1rem;padding:.9rem 1.25rem;border-bottom:1px solid rgba(255,255,255,.04);transition:background .2s}
+.list-item:last-child{border-bottom:none}
+.list-item:hover{background:rgba(255,255,255,.03)}
+.list-item .rank{font-size:1.4rem;font-weight:800;color:var(--dim);width:2rem;text-align:center;flex-shrink:0}
+.list-item .rank.gold{color:#fbbf24}.list-item .rank.silver{color:#94a3b8}.list-item .rank.bronze{color:#cd7f32}
+.list-item .info{flex:1;min-width:0}
+.list-item .name{font-weight:600;font-size:.9rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.list-item .meta{font-size:.78rem;color:var(--muted);margin-top:.15rem}
+.list-item .hours{font-weight:700;color:var(--green);font-size:.95rem;white-space:nowrap}
+.list-item .bar-bg{flex:0 0 120px;height:6px;background:rgba(255,255,255,.06);border-radius:3px;overflow:hidden}
+.list-item .bar-fill{height:100%;border-radius:3px;transition:width 1.2s ease}
+
+@media(max-width:768px){
+  .chart-row{grid-template-columns:1fr}
+  .hero-stats{gap:1.5rem}
+  nav .inner{gap:1rem}
+}
+@media(max-width:480px){
+  .cards{grid-template-columns:1fr 1fr}
+  .gauge-grid{grid-template-columns:1fr 1fr}
+}
+
+.counter{display:inline-block}
+
+/* Archetype */
+.archetype-card{background:linear-gradient(135deg,rgba(29,185,84,.08),rgba(168,85,247,.08));border:1px solid rgba(29,185,84,.2);border-radius:var(--radius);padding:2.5rem;text-align:center;position:relative;overflow:hidden}
+.archetype-card::before{content:'';position:absolute;top:-50%;left:-50%;width:200%;height:200%;background:conic-gradient(from 0deg,transparent,rgba(29,185,84,.05),transparent,rgba(168,85,247,.05),transparent);animation:archSpin 12s linear infinite}
+@keyframes archSpin{to{transform:rotate(360deg)}}
+.archetype-card .arch-name{font-size:2rem;font-weight:900;background:linear-gradient(135deg,var(--green),var(--cyan),var(--purple));-webkit-background-clip:text;-webkit-text-fill-color:transparent;margin-bottom:.75rem;position:relative}
+.archetype-card .arch-desc{color:var(--muted);font-size:1rem;max-width:600px;margin:0 auto;line-height:1.6;position:relative}
+
+/* AI Analysis */
+.ai-section{margin-top:2rem;background:linear-gradient(135deg,rgba(6,182,212,.06),rgba(168,85,247,.06));border:1px solid rgba(6,182,212,.15);border-radius:var(--radius);padding:2rem;position:relative;overflow:hidden}
+.ai-section::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,var(--cyan),var(--purple),var(--green));animation:shimmer 3s ease infinite}
+@keyframes shimmer{0%,100%{opacity:.5}50%{opacity:1}}
+.ai-label{display:inline-flex;align-items:center;gap:.4rem;font-size:.7rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--cyan);margin-bottom:1rem;position:relative}
+.ai-title{font-size:1.6rem;font-weight:900;background:linear-gradient(135deg,var(--cyan),var(--purple));-webkit-background-clip:text;-webkit-text-fill-color:transparent;margin-bottom:1rem;position:relative}
+.ai-summary{color:var(--text);font-size:.95rem;line-height:1.7;margin-bottom:1.5rem;position:relative;opacity:.9}
+.ai-grid{display:grid;grid-template-columns:1fr 1fr;gap:1.5rem;position:relative}
+@media(max-width:600px){.ai-grid{grid-template-columns:1fr}}
+.ai-box{background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.06);border-radius:12px;padding:1.25rem}
+.ai-box h4{font-size:.75rem;text-transform:uppercase;letter-spacing:.06em;color:var(--cyan);margin-bottom:.75rem;font-weight:700}
+.ai-box ul{list-style:none;padding:0}
+.ai-box li{font-size:.85rem;color:var(--muted);padding:.35rem 0;border-bottom:1px solid rgba(255,255,255,.03);line-height:1.5}
+.ai-box li:last-child{border-bottom:none}
+.ai-box li::before{content:'→ ';color:var(--green);font-weight:700}
+.ai-prediction{background:rgba(29,185,84,.06);border:1px solid rgba(29,185,84,.15);border-radius:12px;padding:1.25rem;margin-top:1.5rem;position:relative}
+.ai-prediction .pred-label{font-size:.7rem;text-transform:uppercase;letter-spacing:.06em;color:var(--green);font-weight:700;margin-bottom:.5rem}
+.ai-prediction p{font-size:.9rem;color:var(--text);line-height:1.6;font-style:italic;opacity:.9}
+
+/* Level bar */
+.level-bar-wrap{background:var(--card);border:1px solid var(--card-border);border-radius:var(--radius);padding:1.5rem 2rem;display:flex;align-items:center;gap:1.5rem;margin-top:1.5rem}
+.level-badge{width:64px;height:64px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:1.8rem;font-weight:900;background:linear-gradient(135deg,var(--green),var(--cyan));color:#000;flex-shrink:0}
+.level-info{flex:1}
+.level-info .level-title{font-size:1.1rem;font-weight:700;margin-bottom:.25rem}
+.level-info .level-sub{font-size:.8rem;color:var(--muted);margin-bottom:.5rem}
+.level-progress{height:8px;background:rgba(255,255,255,.06);border-radius:4px;overflow:hidden}
+.level-progress .fill{height:100%;background:linear-gradient(90deg,var(--green),var(--cyan));border-radius:4px;transition:width 1.5s ease}
+.level-xp{font-size:.85rem;color:var(--green);font-weight:700;white-space:nowrap}
+
+/* Badges */
+.badge-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:1rem}
+.badge-card{background:var(--card);border:1px solid var(--card-border);border-radius:var(--radius);padding:1rem;text-align:center;transition:all .4s ease;position:relative}
+.badge-card.earned{border-color:rgba(29,185,84,.3);background:rgba(29,185,84,.04)}
+.badge-card.earned:hover{transform:translateY(-4px) scale(1.02);box-shadow:0 8px 25px rgba(29,185,84,.15)}
+.badge-card.locked{opacity:.35;filter:grayscale(1)}
+.badge-icon{font-size:2rem;margin-bottom:.5rem;display:block}
+.badge-card .badge-name{font-size:.75rem;font-weight:700;margin-bottom:.2rem}
+.badge-card .badge-desc{font-size:.65rem;color:var(--muted)}
+.badge-card.earned .badge-name{color:var(--green)}
+
+/* Radar */
+.radar-wrap{display:flex;gap:2rem;align-items:center;flex-wrap:wrap}
+.radar-chart-box{flex:1;min-width:280px;max-width:400px}
+.radar-legend{flex:1;min-width:200px}
+.radar-legend-item{display:flex;justify-content:space-between;padding:.5rem 0;border-bottom:1px solid rgba(255,255,255,.04);font-size:.9rem}
+.radar-legend-item .val{font-weight:700;color:var(--green)}
+
+/* Back link */
+.back-link{display:inline-flex;align-items:center;gap:.4rem;color:var(--muted);font-size:.8rem;font-weight:500;transition:color .2s;cursor:pointer}
+.back-link:hover{color:var(--green)}
+</style>
+</head>
+<body>
+
+<div class="bg-glow"><div class="orb o1"></div><div class="orb o2"></div><div class="orb o3"></div></div>
+
+<nav><div class="inner">
+  <span class="logo">Datatify</span>
+  <a href="#profile">Profil</a>
+  <a href="#overview">Genel</a>
+  <a href="#metrics">Metrikler</a>
+  <a href="#time">Zaman</a>
+  <a href="#badges">Rozetler</a>
+  <a href="#artists">Sanatçılar</a>
+  <a href="#songs">Şarkılar</a>
+  <a href="#benchmark">Karşılaştır</a>
+  <a href="/" class="back-link" style="margin-left:auto">← Yeni Analiz</a>
+</div></nav>
+
+<div class="wrapper">
+
+<!-- Hero (dynamic) -->
+<div class="hero">
+  <div class="top-badge">Spotify Extended History</div>
+  <h1>Senin <span class="accent">Müzik DNA</span>'n</h1>
+  <p id="heroSubtitle"></p>
+  <div class="hero-stats" id="heroStats"></div>
+</div>
+
+<!-- Profile -->
+<div class="section" id="profile">
+  <div class="section-title">Dinleyici Profili</div>
+  <div class="section-sub">Müzik DNA'ndan çıkan kişilik analizi</div>
+  <div class="archetype-card" id="archetype-card"></div>
+  <div id="ai-analysis-section"></div>
+  <div class="level-bar-wrap" id="level-bar"></div>
+  <div style="margin-top:2rem">
+    <h3 style="font-size:.9rem;font-weight:600;margin-bottom:1rem">Profil Radar</h3>
+    <div class="radar-wrap">
+      <div class="radar-chart-box"><canvas id="chartRadar"></canvas></div>
+      <div class="radar-legend" id="radar-legend"></div>
+    </div>
+  </div>
+</div>
+
+<!-- Badges -->
+<div class="section" id="badges">
+  <div class="section-title">Rozetler</div>
+  <div class="section-sub" id="badge-count"></div>
+  <div class="badge-grid" id="badge-grid"></div>
+</div>
+
+<!-- Overview -->
+<div class="section" id="overview">
+  <div class="section-title">Genel Bakış</div>
+  <div class="section-sub">Hesabının ömrü boyunca dinleme alışkanlıkların</div>
+  <div class="cards" id="overview-cards"></div>
+</div>
+
+<!-- Gauges -->
+<div class="section" id="metrics">
+  <div class="section-title">Davranış Metrikleri</div>
+  <div class="section-sub">Dinleme tarzını tanımlayan skorlar</div>
+  <div class="gauge-grid" id="gauge-grid"></div>
+</div>
+
+<!-- Charts -->
+<div class="section" id="time">
+  <div class="section-title">Zaman Analizi</div>
+  <div class="section-sub">Ne zaman, ne kadar</div>
+  <div class="chart-row">
+    <div class="chart-card"><h3>Saatlere Göre Dinleme <span style="font-weight:400;color:var(--muted);font-size:.75rem" id="tzLabel">(yerel saat)</span></h3><canvas id="chartCircadian"></canvas></div>
+    <div class="chart-card"><h3>Haftanın Günleri</h3><canvas id="chartWeekday"></canvas></div>
+  </div>
+  <div class="chart-row" style="margin-top:1.5rem">
+    <div class="chart-card"><h3>Yıllara Göre Dinleme</h3><canvas id="chartYearly"></canvas></div>
+    <div class="chart-card"><h3>Yıllık Büyüme</h3><canvas id="chartGrowth"></canvas></div>
+  </div>
+</div>
+
+<!-- Top Artists -->
+<div class="section" id="artists">
+  <div class="section-title">En Çok Dinlenen Sanatçılar</div>
+  <div class="section-sub">Toplam dinleme süresine göre</div>
+  <div class="list-card" id="artist-list"></div>
+</div>
+
+<!-- Top Songs -->
+<div class="section" id="songs">
+  <div class="section-title">En Çok Dinlenen Şarkılar</div>
+  <div class="section-sub">Saatlerce tekrar dinlediğin parçalar</div>
+  <div class="list-card" id="song-list"></div>
+</div>
+
+<!-- Benchmark -->
+<div class="section" id="benchmark">
+  <div class="section-title">Nasıl Karşılaştırılıyorsun?</div>
+  <div class="section-sub">Diğer kullanıcılarla anonim kıyaslama</div>
+  <div style="text-align:center;margin-bottom:1.5rem">
+    <button id="btnBenchmark" style="background:linear-gradient(135deg,var(--green),var(--cyan));color:#000;border:none;padding:.75rem 2rem;border-radius:100px;font-weight:700;font-size:.9rem;cursor:pointer;transition:transform .2s,box-shadow .2s" onmouseover="this.style.transform='scale(1.05)';this.style.boxShadow='0 4px 20px rgba(29,185,84,.4)'" onmouseout="this.style.transform='scale(1)';this.style.boxShadow='none'">
+      Karşılaştır & Paylaş
+    </button>
+    <p style="font-size:.7rem;color:var(--dim);margin-top:.5rem">Sadece anonim metrikler gönderilir. Şarkı, sanatçı veya kişisel veri paylaşılmaz.</p>
+  </div>
+  <div id="benchmark-results" style="display:none">
+    <div class="cards" id="percentile-cards"></div>
+    <p id="benchmark-users" style="text-align:center;color:var(--muted);font-size:.8rem;margin-top:1rem"></p>
+  </div>
+</div>
+
+<p style="text-align:center;color:var(--dim);font-size:.75rem;padding:3rem 0 1rem;border-top:1px solid var(--card-border);margin-top:3rem">
+  <a href="https://github.com/emrnel/datatify" target="_blank">Datatify</a> — Spotify Extended Streaming History'den üretilmiştir.
+</p>
+
+</div>
+
+<script>
+const DATA = SPOTIFY_DATA_PLACEHOLDER;
+
+const R = DATA.bizim_rapor || {};
+const M = DATA.metrikler || {};
+const fmt = n => typeof n==='number' ? n.toLocaleString('tr-TR') : n;
+
+// ── Dynamic Hero ──
+document.getElementById('heroSubtitle').textContent =
+  `${R.ilk_yil || '?'}'${(R.son_yil||'?')>2000?'den':'dan'} bu yana tüm dinleme geçmişinin derinlemesine analizi`;
+
+const heroItems = [
+  {value: Math.round(R.toplam_saat || 0), label: 'saat dinleme'},
+  {value: Math.round(R.toplam_gun_esdeger || 0), label: 'gün eşdeğer'},
+  {value: R.toplam_kayit || 0, label: 'toplam kayıt'},
+  {value: R.oturum_sayisi || 0, label: 'oturum'},
+];
+document.getElementById('heroStats').innerHTML = heroItems.map(h =>
+  `<div class="hero-stat"><div class="num" data-count="${h.value}">0</div><div class="label">${h.label}</div></div>`
+).join('');
+
+// ── Animated counters ──
+function animateCounters(){
+  document.querySelectorAll('[data-count]').forEach(el => {
+    const target = parseInt(el.dataset.count);
+    const duration = 2000;
+    const start = performance.now();
+    const tick = now => {
+      const p = Math.min((now - start) / duration, 1);
+      const ease = 1 - Math.pow(1 - p, 4);
+      el.textContent = Math.round(target * ease).toLocaleString('tr-TR');
+      if (p < 1) requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+  });
+}
+setTimeout(animateCounters, 300);
+
+// ── Scroll reveal ──
+const obs = new IntersectionObserver(entries => {
+  entries.forEach(e => { if(e.isIntersecting) { e.target.classList.add('visible'); obs.unobserve(e.target); }});
+}, {threshold: 0.1});
+document.querySelectorAll('.section').forEach(s => obs.observe(s));
+
+// ── Archetype ──
+const arch = DATA.archetype || {};
+document.getElementById('archetype-card').innerHTML =
+  `<div class="arch-name">${arch.name || 'Unknown'}</div><div class="arch-desc">${arch.description || ''}</div>`;
+
+// ── Gemini AI Analysis ──
+const ai = DATA.gemini_analysis;
+if (ai) {
+  document.getElementById('ai-analysis-section').innerHTML = `
+    <div class="ai-section">
+      <div class="ai-label">✦ AI Karakter Analizi — Gemini</div>
+      <div class="ai-title">${ai.title || ''}</div>
+      <div class="ai-summary">${ai.summary || ''}</div>
+      <div class="ai-grid">
+        <div class="ai-box">
+          <h4>Kişilik Özellikleri</h4>
+          <ul>${(ai.traits || []).map(t => `<li>${t}</li>`).join('')}</ul>
+        </div>
+        <div class="ai-box">
+          <h4>Şaşırtıcı Gözlemler</h4>
+          <ul>${(ai.insights || []).map(t => `<li>${t}</li>`).join('')}</ul>
+        </div>
+      </div>
+      ${ai.prediction ? `<div class="ai-prediction"><div class="pred-label">🔮 Tahmin</div><p>${ai.prediction}</p></div>` : ''}
+    </div>`;
+}
+
+// ── Level ──
+const lv = DATA.level || {};
+const nextH = lv.next_threshold_hours || 100;
+const currH = R.toplam_saat || 0;
+const lvPct = Math.min(100, (currH / nextH) * 100);
+document.getElementById('level-bar').innerHTML =
+  `<div class="level-badge">${lv.level||1}</div><div class="level-info"><div class="level-title">${lv.title||'Listener'}</div><div class="level-sub">Seviye ${lv.level||1} · ${fmt(lv.xp||0)} XP · Sonraki: ${fmt(nextH)} saat</div><div class="level-progress"><div class="fill" style="width:${lvPct}%"></div></div></div><div class="level-xp">${fmt(Math.round(currH))} / ${fmt(nextH)} saat</div>`;
+
+// ── Badges ──
+const badges = DATA.badges || [];
+const badgeIcons = {night_owl:'🦉',marathon:'🏃',one_track_mind:'🔁',shuffle_addict:'🎲',album_purist:'💿',explorer:'🧭',deep_focus:'🧠',impatient:'⚡',loyal_fan:'🛡️',ghost:'👻',world_traveler:'🌍',centurion:'💯',dedication:'🏆',offline_warrior:'📴',creature_of_habit:'🔄'};
+document.getElementById('badge-count').textContent = `${DATA.badges_earned || 0} / ${DATA.badges_total || 0} rozet kazanıldı`;
+document.getElementById('badge-grid').innerHTML = badges.map(b =>
+  `<div class="badge-card ${b.earned?'earned':'locked'}"><span class="badge-icon">${badgeIcons[b.id]||'🎵'}</span><div class="badge-name">${b.name}</div><div class="badge-desc">${b.desc}</div></div>`
+).join('');
+
+// ── Radar Chart ──
+const radar = DATA.radar || {};
+const radarLabels = Object.keys(radar);
+const radarValues = Object.values(radar);
+new Chart(document.getElementById('chartRadar'), {
+  type: 'radar',
+  data: {
+    labels: radarLabels,
+    datasets: [{
+      data: radarValues,
+      backgroundColor: 'rgba(29,185,84,.15)',
+      borderColor: 'rgba(29,185,84,.8)',
+      borderWidth: 2,
+      pointBackgroundColor: '#1db954',
+      pointBorderColor: '#050505',
+      pointBorderWidth: 2,
+      pointRadius: 5,
+      pointHoverRadius: 8,
+    }]
+  },
+  options: {
+    scales: { r: { beginAtZero: true, max: 100, ticks: { display: false }, grid: { color: 'rgba(255,255,255,.06)' }, pointLabels: { color: '#ccc', font: { size: 12, weight: 600 } } } },
+    plugins: { legend: { display: false } }
+  }
+});
+document.getElementById('radar-legend').innerHTML = radarLabels.map((l, i) =>
+  `<div class="radar-legend-item"><span>${l}</span><span class="val">${radarValues[i]}</span></div>`
+).join('');
+
+// ── Overview Cards ──
+const overviewData = [
+  {label:'Toplam Süre',value:fmt(R.toplam_saat)+' saat',desc:R.toplam_gun_esdeger+' gün',cls:'glow-green',icon:'🎵'},
+  {label:'Toplam Kayıt',value:fmt(R.toplam_kayit),desc:'dinleme',cls:'glow-cyan',icon:'📊'},
+  {label:'Oturum',value:fmt(R.oturum_sayisi),desc:'ort. '+R.ortalama_oturum_saat+' saat',cls:'glow-blue',icon:'🎧'},
+  {label:'Tam Dinlenen',value:R.tam_dinlenme_orani_pct+'%',desc:fmt(R.tam_dinlenen)+' parça',cls:'glow-purple',icon:'✅'},
+  {label:'Shuffle',value:R.shuffle_orani_pct+'%',desc:'karışık çalma',cls:'glow-orange',icon:'🔀'},
+  {label:'Çevrimdışı',value:R.cevrimdisi_orani_pct+'%',desc:R.cevrimdisi_saat+' saat',cls:'glow-pink',icon:'📴'},
+  {label:'Mobil Oran',value:M.mobile_usage_ratio_pct+'%',desc:'cep/tablet',cls:'glow-cyan',icon:'📱'},
+  {label:'Gece Dinleme',value:M.night_listening_ratio_pct+'%',desc:'00:00–06:00',cls:'glow-purple',icon:'🌙'},
+  {label:'Günlük Yoğunluk',value:M.listening_intensity_h_per_day+' s/gün',desc:'ortalama',cls:'glow-green',icon:'⚡'},
+];
+document.getElementById('overview-cards').innerHTML = overviewData.map(c =>
+  `<div class="card ${c.cls}"><div class="icon" style="background:${c.cls.includes('green')?'var(--green-dim)':c.cls.includes('purple')?'rgba(168,85,247,.12)':c.cls.includes('blue')?'rgba(59,130,246,.12)':c.cls.includes('pink')?'rgba(236,72,153,.12)':c.cls.includes('orange')?'rgba(249,115,22,.12)':'rgba(6,182,212,.12)'}">${c.icon}</div><div class="card-label">${c.label}</div><div class="card-value">${c.value}</div><div class="card-desc">${c.desc}</div></div>`
+).join('');
+
+// ── Gauge rings ──
+const gauges = [
+  {label:'Sabırsızlık',val:M.impatience_score_pct,color:'var(--pink)',desc:'Şarkı atlama eğilimi'},
+  {label:'Tamamlama',val:M.completion_rate_pct,color:'var(--green)',desc:'Sonuna kadar dinleme'},
+  {label:'Keşif',val:M.exploration_score,color:'var(--cyan)',desc:'Benzersiz parça oranı'},
+  {label:'Erken Atlama',val:M.early_skip_rate_pct,color:'var(--orange)',desc:'30 sn içinde skip'},
+  {label:'Odak',val:M.focus_session_score_pct,color:'var(--blue)',desc:'4+ dk kesintisiz'},
+  {label:'Yeni Parça',val:M.music_novelty_rate_pct,color:'var(--purple)',desc:'Aylık keşif oranı'},
+  {label:'Sanatçı Sadakati',val:M.artist_loyalty_score_pct,color:'var(--green)',desc:'Top 10 sanatçı payı'},
+  {label:'Alışkanlık',val:M.habit_loop_score_pct,color:'var(--pink)',desc:'Tekrar eden sıralar'},
+  {label:'Parçalılık',val:Math.min(M.listening_fragmentation_index*10,100),color:'var(--orange)',desc:M.listening_fragmentation_index+' skip/oturum',raw:M.listening_fragmentation_index},
+];
+const circ = 2 * Math.PI * 42;
+document.getElementById('gauge-grid').innerHTML = gauges.map(g => {
+  const pct = Math.min(g.val, 100);
+  const offset = circ - (circ * pct / 100);
+  const displayVal = g.raw !== undefined ? g.raw : g.val + '%';
+  return `<div class="gauge-card"><div class="gauge-ring"><svg viewBox="0 0 100 100"><circle class="track" cx="50" cy="50" r="42"/><circle class="fill" cx="50" cy="50" r="42" stroke="${g.color}" stroke-dasharray="${circ}" stroke-dashoffset="${offset}" style="transition-delay:.4s"/></svg><div class="center-val" style="color:${g.color}">${displayVal}</div></div><div class="gauge-label">${g.label}</div><div class="gauge-desc">${g.desc}</div></div>`;
+}).join('');
+
+// ── Chart.js defaults ──
+Chart.defaults.color = '#888';
+Chart.defaults.borderColor = 'rgba(255,255,255,.06)';
+Chart.defaults.font.family = "'Inter',system-ui,sans-serif";
+Chart.defaults.font.size = 11;
+Chart.defaults.plugins.legend.display = false;
+Chart.defaults.animation.duration = 1500;
+Chart.defaults.animation.easing = 'easeOutQuart';
+
+const greenGrad = (ctx, h = 300) => {
+  const g = ctx.createLinearGradient(0, 0, 0, h);
+  g.addColorStop(0, 'rgba(29,185,84,.6)');
+  g.addColorStop(1, 'rgba(29,185,84,.02)');
+  return g;
+};
+
+// Circadian
+const cHours = M.circadian_hours || {};
+const tzEl = document.getElementById('tzLabel');
+if (M.timezone) tzEl.textContent = '(' + M.timezone + ' yerel saat)';
+new Chart(document.getElementById('chartCircadian'), {
+  type: 'bar',
+  data: {
+    labels: Object.keys(cHours).map(h => h + ':00'),
+    datasets: [{
+      data: Object.values(cHours),
+      backgroundColor: Object.keys(cHours).map(h => {
+        const hr = parseInt(h);
+        if (hr >= 0 && hr < 6) return 'rgba(168,85,247,.6)';
+        if (hr >= 6 && hr < 12) return 'rgba(249,115,22,.6)';
+        if (hr >= 12 && hr < 18) return 'rgba(29,185,84,.6)';
+        return 'rgba(59,130,246,.6)';
+      }),
+      borderRadius: 4, barPercentage: .7
+    }]
+  },
+  options: { scales: { y: { beginAtZero: true, title: { display: true, text: 'saat' } } }, plugins: { tooltip: { callbacks: { label: c => c.raw + ' saat' } } } }
+});
+
+// Weekday
+const wdData = DATA.haftanin_gunu || {};
+new Chart(document.getElementById('chartWeekday'), {
+  type: 'bar',
+  data: {
+    labels: Object.keys(wdData),
+    datasets: [{
+      data: Object.values(wdData),
+      backgroundColor: ['#1db954','#3b82f6','#a855f7','#ec4899','#f97316','#06b6d4','#1db954'].map(c => c + '99'),
+      borderRadius: 6, barPercentage: .6
+    }]
+  },
+  options: { indexAxis: 'y', scales: { x: { beginAtZero: true, title: { display: true, text: 'saat' } } }, plugins: { tooltip: { callbacks: { label: c => c.raw + ' saat' } } } }
+});
+
+// Yearly
+const ygData = DATA.yillara_gore || {};
+new Chart(document.getElementById('chartYearly'), {
+  type: 'line',
+  data: {
+    labels: Object.keys(ygData),
+    datasets: [{
+      data: Object.values(ygData).map(d => d.saat),
+      fill: true,
+      backgroundColor: function(context) { return greenGrad(context.chart.ctx, context.chart.height); },
+      borderColor: 'rgba(29,185,84,.8)',
+      borderWidth: 2.5,
+      pointBackgroundColor: '#1db954',
+      pointBorderColor: '#050505',
+      pointBorderWidth: 2,
+      pointRadius: 5,
+      pointHoverRadius: 8,
+      tension: .4
+    }]
+  },
+  options: { scales: { y: { beginAtZero: true, title: { display: true, text: 'saat' } } }, plugins: { tooltip: { callbacks: { label: c => c.raw + ' saat' } } } }
+});
+
+// Growth
+const growthData = M.yearly_growth_pct || {};
+new Chart(document.getElementById('chartGrowth'), {
+  type: 'bar',
+  data: {
+    labels: Object.keys(growthData),
+    datasets: [{
+      data: Object.values(growthData),
+      backgroundColor: Object.values(growthData).map(v => v >= 0 ? 'rgba(29,185,84,.7)' : 'rgba(236,72,153,.6)'),
+      borderRadius: 4, barPercentage: .6
+    }]
+  },
+  options: { scales: { y: { title: { display: true, text: '%' } } }, plugins: { tooltip: { callbacks: { label: c => (c.raw > 0 ? '+' : '') + c.raw + '%' } } } }
+});
+
+// ── Top Artists ──
+const artists = (DATA.top_sanatcilar || []).slice(0, 15);
+const maxArtistH = artists[0]?.saat || 1;
+document.getElementById('artist-list').innerHTML = artists.map((a, i) => {
+  const rankCls = i === 0 ? 'gold' : i === 1 ? 'silver' : i === 2 ? 'bronze' : '';
+  const pct = (a.saat / maxArtistH) * 100;
+  const colors = ['var(--green)','var(--cyan)','var(--purple)','var(--blue)','var(--pink)','var(--orange)'];
+  const barColor = colors[i % colors.length];
+  return `<div class="list-item"><div class="rank ${rankCls}">${a.sira}</div><div class="info"><div class="name">${a.sanatci}</div><div class="meta">Skip: ${a.skip_pct}%</div></div><div class="hours">${a.saat}h</div><div class="bar-bg"><div class="bar-fill" style="width:${pct}%;background:${barColor}"></div></div></div>`;
+}).join('');
+
+// ── Top Songs ──
+const songs = (DATA.top_sarkilar || []).slice(0, 15);
+const maxSongH = songs[0]?.saat || 1;
+document.getElementById('song-list').innerHTML = songs.map((s, i) => {
+  const rankCls = i === 0 ? 'gold' : i === 1 ? 'silver' : i === 2 ? 'bronze' : '';
+  const pct = (s.saat / maxSongH) * 100;
+  const colors = ['var(--green)','var(--purple)','var(--blue)','var(--orange)','var(--cyan)','var(--pink)'];
+  const barColor = colors[i % colors.length];
+  return `<div class="list-item"><div class="rank ${rankCls}">${s.sira}</div><div class="info"><div class="name">${s.sarki}</div><div class="meta">${s.sanatci}</div></div><div class="hours">${s.saat}h</div><div class="bar-bg"><div class="bar-fill" style="width:${pct}%;background:${barColor}"></div></div></div>`;
+}).join('');
+
+// ── Benchmark (relative URL — same server) ──
+document.getElementById('btnBenchmark').addEventListener('click', async () => {
+  const btn = document.getElementById('btnBenchmark');
+  btn.textContent = 'Gönderiliyor...';
+  btn.disabled = true;
+  const payload = {
+    impatience_score_pct: M.impatience_score_pct || 0,
+    completion_rate_pct: M.completion_rate_pct || 0,
+    exploration_score: M.exploration_score || 0,
+    artist_diversity_entropy: M.artist_diversity_entropy || 0,
+    early_skip_rate_pct: M.early_skip_rate_pct || 0,
+    listening_intensity_h_per_day: M.listening_intensity_h_per_day || 0,
+    night_listening_ratio_pct: M.night_listening_ratio_pct || 0,
+    mobile_usage_ratio_pct: M.mobile_usage_ratio_pct || 0,
+    focus_session_score_pct: M.focus_session_score_pct || 0,
+    music_novelty_rate_pct: M.music_novelty_rate_pct || 0,
+    artist_loyalty_score_pct: M.artist_loyalty_score_pct || 0,
+    habit_loop_score_pct: M.habit_loop_score_pct || 0,
+    listening_fragmentation_index: M.listening_fragmentation_index || 0,
+    total_hours: R.toplam_saat || 0,
+    shuffle_pct: R.shuffle_orani_pct || 0,
+  };
+  try {
+    const res = await fetch('/api/submit', {
+      method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload)
+    });
+    if (!res.ok) throw new Error('API error');
+    const result = await res.json();
+    const pct = result.percentiles || {};
+    const labels = result.labels || {};
+    const pctNames = {
+      impatience_score_pct:'Sabırsızlık', completion_rate_pct:'Tamamlama', exploration_score:'Keşif',
+      artist_diversity_entropy:'Çeşitlilik', early_skip_rate_pct:'Erken Atlama',
+      listening_intensity_h_per_day:'Yoğunluk', night_listening_ratio_pct:'Gece Kuşu',
+      focus_session_score_pct:'Odak', artist_loyalty_score_pct:'Sadakat',
+      total_hours:'Toplam Süre', shuffle_pct:'Shuffle',
+    };
+    const pctColors = v => v >= 80 ? 'var(--green)' : v >= 50 ? 'var(--cyan)' : v >= 20 ? 'var(--orange)' : 'var(--pink)';
+    document.getElementById('percentile-cards').innerHTML = Object.entries(pctNames).map(([k, name]) => {
+      const v = pct[k] ?? 50;
+      return `<div class="card"><div class="card-label">${name}</div><div class="card-value" style="color:${pctColors(v)}">%${v.toFixed(0)}</div><div class="card-desc">${labels[k] || ''}</div></div>`;
+    }).join('');
+    document.getElementById('benchmark-results').style.display = 'block';
+    document.getElementById('benchmark-users').textContent = `${result.total_users || 0} kullanıcı arasında`;
+    btn.textContent = 'Güncellendi!';
+    btn.style.background = 'var(--card)';
+    btn.style.color = 'var(--green)';
+  } catch (e) {
+    btn.textContent = 'Bağlantı başarısız';
+    btn.style.background = 'var(--card)';
+    btn.style.color = 'var(--pink)';
+    console.error(e);
+  }
+});
+</script>
+</body>
+</html>

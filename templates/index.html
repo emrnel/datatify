@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Datatify — Spotify Listening DNA</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#050505;--surface:#0f0f0f;
+  --card:rgba(255,255,255,.04);--card-border:rgba(255,255,255,.06);
+  --green:#1db954;--green-glow:rgba(29,185,84,.35);--green-dim:rgba(29,185,84,.12);
+  --purple:#a855f7;--blue:#3b82f6;--cyan:#06b6d4;--pink:#ec4899;
+  --text:#f0f0f0;--muted:#888;--dim:#555;
+  --radius:16px;
+}
+html{scroll-behavior:smooth;height:100%}
+body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--text);min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;overflow-x:hidden;-webkit-font-smoothing:antialiased}
+::selection{background:var(--green);color:#000}
+
+.bg-glow{position:fixed;top:0;left:0;width:100%;height:100%;z-index:0;pointer-events:none;overflow:hidden}
+.bg-glow .orb{position:absolute;border-radius:50%;filter:blur(140px);opacity:.15;animation:orbFloat 22s ease-in-out infinite alternate}
+.orb.o1{width:600px;height:600px;background:var(--green);top:-15%;left:-10%;animation-delay:0s}
+.orb.o2{width:500px;height:500px;background:var(--purple);bottom:-15%;right:-10%;animation-delay:-8s}
+.orb.o3{width:350px;height:350px;background:var(--cyan);top:50%;left:55%;animation-delay:-15s}
+@keyframes orbFloat{0%{transform:translate(0,0) scale(1)}50%{transform:translate(60px,-40px) scale(1.1)}100%{transform:translate(-30px,50px) scale(.95)}}
+
+.container{position:relative;z-index:1;width:100%;max-width:620px;padding:2rem;text-align:center}
+
+.logo{font-size:1rem;font-weight:800;letter-spacing:.06em;text-transform:uppercase;background:linear-gradient(135deg,var(--green),var(--cyan));-webkit-background-clip:text;-webkit-text-fill-color:transparent;margin-bottom:2.5rem;animation:fadeUp .7s ease}
+
+h1{font-size:clamp(2rem,5vw,3.2rem);font-weight:900;line-height:1.1;margin-bottom:1rem;animation:fadeUp .7s ease .1s both}
+h1 .accent{background:linear-gradient(135deg,var(--green),var(--cyan));-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+
+.subtitle{color:var(--muted);font-size:1rem;max-width:440px;margin:0 auto 2.5rem;line-height:1.6;animation:fadeUp .7s ease .2s both}
+
+@keyframes fadeUp{from{opacity:0;transform:translateY(24px)}to{opacity:1;transform:translateY(0)}}
+
+.upload-zone{background:var(--card);border:2px dashed rgba(255,255,255,.1);border-radius:var(--radius);padding:3rem 2rem;cursor:pointer;transition:all .3s ease;animation:fadeUp .7s ease .3s both;position:relative;overflow:hidden}
+.upload-zone:hover,.upload-zone.drag-over{border-color:var(--green);background:rgba(29,185,84,.04)}
+.upload-zone.drag-over::after{content:'';position:absolute;inset:0;background:rgba(29,185,84,.06);pointer-events:none}
+.upload-zone .icon{font-size:3rem;margin-bottom:1rem;display:block}
+.upload-zone .main-text{font-size:1rem;font-weight:600;margin-bottom:.5rem}
+.upload-zone .sub-text{font-size:.8rem;color:var(--muted)}
+.upload-zone input{display:none}
+
+.file-list{margin-top:1.25rem;text-align:left}
+.file-item{display:flex;align-items:center;gap:.75rem;padding:.6rem 1rem;background:rgba(255,255,255,.03);border-radius:10px;margin-bottom:.5rem;font-size:.85rem}
+.file-item .fname{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.file-item .fsize{color:var(--muted);font-size:.75rem;white-space:nowrap}
+.file-item .remove{color:var(--pink);cursor:pointer;font-size:1.1rem;padding:0 .25rem;line-height:1}
+
+.btn-analyze{display:inline-flex;align-items:center;gap:.5rem;margin-top:2rem;padding:.85rem 2.5rem;border:none;border-radius:100px;background:linear-gradient(135deg,var(--green),var(--cyan));color:#000;font-weight:700;font-size:1rem;cursor:pointer;transition:all .3s ease;animation:fadeUp .7s ease .4s both}
+.btn-analyze:hover{transform:scale(1.04);box-shadow:0 6px 28px rgba(29,185,84,.35)}
+.btn-analyze:disabled{opacity:.4;cursor:not-allowed;transform:none;box-shadow:none}
+
+.loading{display:none;flex-direction:column;align-items:center;gap:1.5rem;margin-top:2rem;animation:fadeUp .5s ease}
+.loading.active{display:flex}
+.spinner{width:48px;height:48px;border:3px solid rgba(255,255,255,.08);border-top-color:var(--green);border-radius:50%;animation:spin .8s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.loading-text{font-size:.9rem;color:var(--muted)}
+.loading-sub{font-size:.75rem;color:var(--dim)}
+
+.steps{display:flex;gap:1.25rem;margin-top:3rem;animation:fadeUp .7s ease .5s both;flex-wrap:wrap;justify-content:center}
+.step{background:var(--card);border:1px solid var(--card-border);border-radius:12px;padding:1.2rem 1rem;flex:1;min-width:140px;max-width:180px;text-align:center}
+.step .step-num{width:28px;height:28px;border-radius:50%;background:var(--green-dim);color:var(--green);display:inline-flex;align-items:center;justify-content:center;font-size:.75rem;font-weight:800;margin-bottom:.6rem}
+.step .step-text{font-size:.78rem;color:var(--muted);line-height:1.4}
+
+.footer{margin-top:3rem;font-size:.7rem;color:var(--dim);animation:fadeUp .7s ease .6s both}
+.footer a{color:var(--green)}
+
+.error-msg{margin-top:1rem;color:var(--pink);font-size:.85rem;display:none}
+</style>
+</head>
+<body>
+
+<div class="bg-glow"><div class="orb o1"></div><div class="orb o2"></div><div class="orb o3"></div></div>
+
+<div class="container">
+  <div class="logo">Datatify</div>
+  <h1>Senin <span class="accent">Müzik DNA</span>'n</h1>
+  <p class="subtitle">Spotify Extended Streaming History dosyalarını yükle, yapay zeka destekli derinlemesine müzik kişilik analizi al.</p>
+
+  <div class="upload-zone" id="dropZone">
+    <span class="icon">📂</span>
+    <div class="main-text">JSON dosyalarını sürükle & bırak</div>
+    <div class="sub-text">veya tıklayarak seç — Streaming_History_Audio_*.json</div>
+    <input type="file" id="fileInput" multiple accept=".json">
+    <div class="file-list" id="fileList"></div>
+  </div>
+
+  <div class="error-msg" id="errorMsg"></div>
+
+  <button class="btn-analyze" id="btnAnalyze" disabled>
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+    Analiz Et
+  </button>
+
+  <div class="loading" id="loading">
+    <div class="spinner"></div>
+    <div class="loading-text" id="loadingText">Dosyalar işleniyor...</div>
+    <div class="loading-sub">Bu işlem dosya boyutuna bağlı olarak 10-30 saniye sürebilir.</div>
+  </div>
+
+  <div class="steps">
+    <div class="step"><div class="step-num">1</div><div class="step-text">Spotify'dan Extended History indir</div></div>
+    <div class="step"><div class="step-num">2</div><div class="step-text">JSON dosyalarını buraya yükle</div></div>
+    <div class="step"><div class="step-num">3</div><div class="step-text">AI destekli kişilik analizini al</div></div>
+  </div>
+
+  <p class="footer">
+    Veriler sunucuda saklanmaz. Analiz tamamlandıktan sonra dosyalar silinir.<br>
+    <a href="https://github.com/emrnel/datatify" target="_blank">GitHub</a>
+  </p>
+</div>
+
+<script>
+const dropZone = document.getElementById('dropZone');
+const fileInput = document.getElementById('fileInput');
+const fileList = document.getElementById('fileList');
+const btn = document.getElementById('btnAnalyze');
+const loading = document.getElementById('loading');
+const loadingText = document.getElementById('loadingText');
+const errorMsg = document.getElementById('errorMsg');
+
+let selectedFiles = [];
+
+function showError(msg) {
+  errorMsg.textContent = msg;
+  errorMsg.style.display = 'block';
+  setTimeout(() => errorMsg.style.display = 'none', 5000);
+}
+
+function formatSize(bytes) {
+  if (bytes < 1024) return bytes + ' B';
+  if (bytes < 1048576) return (bytes / 1024).toFixed(1) + ' KB';
+  return (bytes / 1048576).toFixed(1) + ' MB';
+}
+
+function renderFiles() {
+  fileList.innerHTML = selectedFiles.map((f, i) =>
+    `<div class="file-item">
+      <span>📄</span>
+      <span class="fname">${f.name}</span>
+      <span class="fsize">${formatSize(f.size)}</span>
+      <span class="remove" data-idx="${i}">&times;</span>
+    </div>`
+  ).join('');
+  btn.disabled = selectedFiles.length === 0;
+
+  fileList.querySelectorAll('.remove').forEach(el => {
+    el.addEventListener('click', e => {
+      e.stopPropagation();
+      selectedFiles.splice(+el.dataset.idx, 1);
+      renderFiles();
+    });
+  });
+}
+
+function addFiles(files) {
+  for (const f of files) {
+    if (!f.name.endsWith('.json')) {
+      showError('Sadece .json dosyaları kabul edilir.');
+      continue;
+    }
+    if (!selectedFiles.some(sf => sf.name === f.name && sf.size === f.size)) {
+      selectedFiles.push(f);
+    }
+  }
+  renderFiles();
+}
+
+dropZone.addEventListener('click', () => fileInput.click());
+fileInput.addEventListener('change', () => { addFiles(fileInput.files); fileInput.value = ''; });
+
+dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
+dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
+dropZone.addEventListener('drop', e => {
+  e.preventDefault();
+  dropZone.classList.remove('drag-over');
+  addFiles(e.dataTransfer.files);
+});
+
+btn.addEventListener('click', async () => {
+  if (selectedFiles.length === 0) return;
+
+  btn.style.display = 'none';
+  dropZone.style.display = 'none';
+  loading.classList.add('active');
+  loadingText.textContent = 'Dosyalar yükleniyor...';
+
+  const fd = new FormData();
+  selectedFiles.forEach(f => fd.append('files', f));
+
+  try {
+    loadingText.textContent = 'Analiz ediliyor & AI karakter profili oluşturuluyor...';
+    const res = await fetch('/analyze', { method: 'POST', body: fd });
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.detail || 'Analiz başarısız oldu.');
+    }
+
+    loadingText.textContent = 'Dashboard hazırlanıyor...';
+    const html = await res.text();
+    document.open();
+    document.write(html);
+    document.close();
+  } catch (e) {
+    loading.classList.remove('active');
+    btn.style.display = '';
+    dropZone.style.display = '';
+    showError(e.message);
+  }
+});
+</script>
+</body>
+</html>
