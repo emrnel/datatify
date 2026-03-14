@@ -260,7 +260,7 @@ async def analyze_files(files: list[UploadFile] = File(...)):
             print(f"[UPLOAD] Failed to parse {f.filename}: {e}")
             continue
 
-    print(f"[UPLOAD] {len(files)} files → {len(all_records)} total records")
+    print(f"[UPLOAD] {len(files)} files -> {len(all_records)} total records")
     for fn in file_names:
         print(f"  · {fn}")
 
