@@ -16,6 +16,8 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from analyzer import analyze
+from graph_analysis import analyze_listening_graph
+from clustering import cluster_users, METRIC_KEYS as CLUSTER_METRIC_KEYS
 
 BASE_DIR = Path(__file__).resolve().parent
 TEMPLATES = BASE_DIR / "templates"
@@ -279,6 +281,56 @@ async def analyze_files(files: list[UploadFile] = File(...)):
     if "error" in metrics:
         raise HTTPException(status_code=400, detail=metrics["error"])
 
+    print("[GRAPH] Building artist transition graph...")
+    t2 = time.time()
+    try:
+        metrics["graph"] = analyze_listening_graph(all_records)
+        print(f"[GRAPH] Done in {time.time()-t2:.1f}s "
+              f"(nodes={metrics['graph']['summary']['nodes']}, "
+              f"edges={metrics['graph']['summary']['edges']}, "
+              f"communities={len(metrics['graph']['communities'])})")
+    except Exception as e:
+        print(f"[GRAPH] FAILED: {e}")
+        traceback.print_exc()
+        metrics["graph"] = {
+            "summary": {"nodes": 0, "edges": 0},
+            "pagerank": [], "communities": [], "components": {},
+            "visualization": {"nodes": [], "edges": []},
+            "error": str(e),
+        }
+
+    print("[CLUSTER] Computing user clustering vs benchmark pool...")
+    try:
+        with get_db() as conn:
+            rows = [dict(r) for r in conn.execute(
+                f"SELECT {', '.join(CLUSTER_METRIC_KEYS)} FROM submissions"
+            ).fetchall()]
+        user_vec = {
+            "impatience_score_pct": metrics["metrikler"]["impatience_score_pct"],
+            "completion_rate_pct": metrics["metrikler"]["completion_rate_pct"],
+            "exploration_score": metrics["metrikler"]["exploration_score"],
+            "artist_diversity_entropy": metrics["metrikler"]["artist_diversity_entropy"],
+            "early_skip_rate_pct": metrics["metrikler"]["early_skip_rate_pct"],
+            "listening_intensity_h_per_day": metrics["metrikler"]["listening_intensity_h_per_day"],
+            "night_listening_ratio_pct": metrics["metrikler"]["night_listening_ratio_pct"],
+            "mobile_usage_ratio_pct": metrics["metrikler"]["mobile_usage_ratio_pct"],
+            "focus_session_score_pct": metrics["metrikler"]["focus_session_score_pct"],
+            "music_novelty_rate_pct": metrics["metrikler"]["music_novelty_rate_pct"],
+            "artist_loyalty_score_pct": metrics["metrikler"]["artist_loyalty_score_pct"],
+            "habit_loop_score_pct": metrics["metrikler"]["habit_loop_score_pct"],
+            "listening_fragmentation_index": metrics["metrikler"]["listening_fragmentation_index"],
+            "total_hours": metrics["bizim_rapor"]["toplam_saat"],
+            "shuffle_pct": metrics["bizim_rapor"]["shuffle_orani_pct"],
+        }
+        metrics["clustering"] = cluster_users(rows, user_vector=user_vec)
+        print(f"[CLUSTER] {metrics['clustering'].get('status')}, "
+              f"k={metrics['clustering'].get('k')}, "
+              f"silhouette={metrics['clustering'].get('silhouette')}")
+    except Exception as e:
+        print(f"[CLUSTER] FAILED: {e}")
+        traceback.print_exc()
+        metrics["clustering"] = {"status": "error", "error": str(e)}
+
     # Gemini (with timeout — dashboard works without it)
     ai = gemini_character_analysis(metrics)
     if ai:
@@ -320,6 +372,32 @@ def get_stats():
             row = conn.execute(f"SELECT AVG({k}) as avg_val FROM submissions").fetchone()
             avgs[k] = round(row["avg_val"], 2) if row["avg_val"] is not None else 0
     return {"total_users": count, "averages": avgs}
+
+
+@app.post("/api/graph")
+async def api_graph(files: list[UploadFile] = File(...)):
+    """Run only the listening transition graph analysis on uploaded JSONs."""
+    all_records: list[dict] = []
+    for f in files:
+        try:
+            data = json.loads((await f.read()).decode("utf-8"))
+            if isinstance(data, list):
+                all_records.extend(data)
+        except Exception:
+            continue
+    if not all_records:
+        raise HTTPException(status_code=400, detail="Geçerli Spotify JSON bulunamadı.")
+    return analyze_listening_graph(all_records)
+
+
+@app.get("/api/cluster")
+def api_cluster():
+    """Cluster all submitted benchmark users (no current-user vector)."""
+    with get_db() as conn:
+        rows = [dict(r) for r in conn.execute(
+            f"SELECT {', '.join(CLUSTER_METRIC_KEYS)} FROM submissions"
+        ).fetchall()]
+    return cluster_users(rows)
 
 
 @app.get("/api/health")

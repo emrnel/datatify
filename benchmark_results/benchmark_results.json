@@ -1,0 +1,26 @@
+[
+  {
+    "records": 100000,
+    "python_seconds": 0.753,
+    "pandas_seconds": 0.674,
+    "pyspark_seconds": 9.137
+  },
+  {
+    "records": 500000,
+    "python_seconds": 3.815,
+    "pandas_seconds": 3.477,
+    "pyspark_seconds": 13.47
+  },
+  {
+    "records": 1000000,
+    "python_seconds": 7.815,
+    "pandas_seconds": 8.574,
+    "pyspark_seconds": 24.417
+  },
+  {
+    "records": 2000000,
+    "python_seconds": 17.327,
+    "pandas_seconds": 13.987,
+    "pyspark_seconds": 50.744
+  }
+]
