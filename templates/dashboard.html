@@ -8,6 +8,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 :root{
@@ -170,6 +171,39 @@ nav a:hover{color:var(--text)}
 /* Back link */
 .back-link{display:inline-flex;align-items:center;gap:.4rem;color:var(--muted);font-size:.8rem;font-weight:500;transition:color .2s;cursor:pointer}
 .back-link:hover{color:var(--green)}
+
+/* Graph */
+.graph-wrap{display:grid;grid-template-columns:2fr 1fr;gap:1.5rem;align-items:stretch}
+@media(max-width:900px){.graph-wrap{grid-template-columns:1fr}}
+.graph-card{background:var(--card);border:1px solid var(--card-border);border-radius:var(--radius);padding:1.25rem;min-height:480px;position:relative;overflow:hidden}
+#graphSvg{display:block;width:100%;height:480px}
+#graphSvg .link{stroke:rgba(255,255,255,.08);stroke-linecap:round}
+#graphSvg .node{cursor:grab;stroke:#050505;stroke-width:1.5}
+#graphSvg .node-label{fill:#ccc;font-size:10px;pointer-events:none;font-weight:500}
+.graph-side{display:flex;flex-direction:column;gap:1rem}
+.graph-stat{background:var(--card);border:1px solid var(--card-border);border-radius:var(--radius-sm);padding:.75rem 1rem;display:flex;justify-content:space-between;align-items:center;font-size:.85rem}
+.graph-stat .v{font-weight:700;color:var(--green)}
+.pagerank-list,.community-list{background:var(--card);border:1px solid var(--card-border);border-radius:var(--radius);padding:1rem 1.25rem;max-height:240px;overflow-y:auto}
+.pagerank-list h4,.community-list h4{font-size:.8rem;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:.6rem;font-weight:700}
+.pr-row{display:flex;justify-content:space-between;font-size:.82rem;padding:.3rem 0;border-bottom:1px solid rgba(255,255,255,.03)}
+.pr-row:last-child{border-bottom:none}
+.pr-row .pr-rank{color:var(--muted);width:24px}
+.pr-row .pr-artist{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pr-row .pr-score{color:var(--green);font-weight:600;font-size:.75rem}
+.community-pill{display:inline-block;padding:.15rem .55rem;border-radius:100px;font-size:.7rem;font-weight:600;margin:.15rem .2rem .15rem 0}
+
+/* Cluster */
+.cluster-wrap{display:grid;grid-template-columns:1fr 1fr;gap:1.5rem}
+@media(max-width:900px){.cluster-wrap{grid-template-columns:1fr}}
+.cluster-hero{background:linear-gradient(135deg,rgba(168,85,247,.10),rgba(29,185,84,.10));border:1px solid var(--card-border);border-radius:var(--radius);padding:1.5rem}
+.cluster-hero .cluster-label{font-size:.7rem;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);font-weight:600}
+.cluster-hero .cluster-name{font-size:1.6rem;font-weight:800;background:linear-gradient(135deg,var(--purple),var(--cyan));-webkit-background-clip:text;-webkit-text-fill-color:transparent;margin:.4rem 0 .6rem}
+.cluster-hero .cluster-meta{font-size:.85rem;color:var(--muted);line-height:1.5}
+.cluster-quality{background:var(--card);border:1px solid var(--card-border);border-radius:var(--radius);padding:1.25rem}
+.cluster-quality h4{font-size:.85rem;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:.75rem}
+.cluster-q-row{display:flex;justify-content:space-between;font-size:.85rem;padding:.4rem 0}
+.cluster-q-row .v{font-weight:700;color:var(--green)}
+.cluster-status-empty{padding:2rem;text-align:center;color:var(--muted);font-size:.85rem}
 </style>
 </head>
 <body>
@@ -185,6 +219,8 @@ nav a:hover{color:var(--text)}
   <a href="#badges">Rozetler</a>
   <a href="#artists">Sanatçılar</a>
   <a href="#songs">Şarkılar</a>
+  <a href="#graph">Graf</a>
+  <a href="#cluster">Küme</a>
   <a href="#benchmark">Karşılaştır</a>
   <a href="/" class="back-link" style="margin-left:auto">← Yeni Analiz</a>
 </div></nav>
@@ -262,6 +298,38 @@ nav a:hover{color:var(--text)}
   <div class="section-title">En Çok Dinlenen Şarkılar</div>
   <div class="section-sub">Saatlerce tekrar dinlediğin parçalar</div>
   <div class="list-card" id="song-list"></div>
+</div>
+
+<!-- Listening Graph (NetworkX: PageRank + Communities) -->
+<div class="section" id="graph">
+  <div class="section-title">Sanatçı Geçiş Grafiği</div>
+  <div class="section-sub">Hangi sanatçılardan hangilerine atlıyorsun? PageRank + topluluk analizi (NetworkX)</div>
+  <div class="graph-wrap">
+    <div class="graph-card">
+      <svg id="graphSvg"></svg>
+    </div>
+    <div class="graph-side">
+      <div class="graph-stat"><span>Düğüm sayısı</span><span class="v" id="g-nodes">–</span></div>
+      <div class="graph-stat"><span>Kenar sayısı</span><span class="v" id="g-edges">–</span></div>
+      <div class="graph-stat"><span>Yoğunluk</span><span class="v" id="g-density">–</span></div>
+      <div class="graph-stat"><span>Bileşen sayısı</span><span class="v" id="g-components">–</span></div>
+      <div class="pagerank-list">
+        <h4>PageRank — En Merkezi 10 Sanatçı</h4>
+        <div id="pagerank-rows"></div>
+      </div>
+      <div class="community-list">
+        <h4>Tespit Edilen Topluluklar</h4>
+        <div id="community-rows"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Clustering (scikit-learn K-Means on benchmark pool) -->
+<div class="section" id="cluster">
+  <div class="section-title">Senin Dinleyici Kümen</div>
+  <div class="section-sub">scikit-learn K-Means ile diğer kullanıcılar arasında konumlanma</div>
+  <div id="cluster-content"></div>
 </div>
 
 <!-- Benchmark -->
@@ -562,6 +630,118 @@ document.getElementById('song-list').innerHTML = songs.map((s, i) => {
   const barColor = colors[i % colors.length];
   return `<div class="list-item"><div class="rank ${rankCls}">${s.sira}</div><div class="info"><div class="name">${s.sarki}</div><div class="meta">${s.sanatci}</div></div><div class="hours">${s.saat}h</div><div class="bar-bg"><div class="bar-fill" style="width:${pct}%;background:${barColor}"></div></div></div>`;
 }).join('');
+
+// ── Listening Graph (NetworkX results) ──
+const graphData = DATA.graph || {};
+const gSummary = graphData.summary || {};
+document.getElementById('g-nodes').textContent = (gSummary.nodes || 0).toLocaleString('tr-TR');
+document.getElementById('g-edges').textContent = (gSummary.edges || 0).toLocaleString('tr-TR');
+document.getElementById('g-density').textContent = (gSummary.density || 0).toFixed(4);
+document.getElementById('g-components').textContent = (graphData.components?.count || 0).toLocaleString('tr-TR');
+
+const prRows = (graphData.pagerank || []).slice(0, 10).map(p =>
+  `<div class="pr-row"><span class="pr-rank">${p.rank}</span><span class="pr-artist" title="${p.artist}">${p.artist}</span><span class="pr-score">${p.score.toFixed(4)}</span></div>`
+).join('');
+document.getElementById('pagerank-rows').innerHTML = prRows || '<div style="color:var(--dim);font-size:.8rem">Veri yok</div>';
+
+const commPalette = ['#1db954','#a855f7','#3b82f6','#ec4899','#f97316','#06b6d4','#34d399','#facc15','#f87171','#818cf8'];
+const communities = graphData.communities || [];
+document.getElementById('community-rows').innerHTML = communities.length
+  ? communities.slice(0, 8).map((c, i) => {
+      const color = commPalette[i % commPalette.length];
+      const tagsHtml = (c.top_artists || []).slice(0, 5).map(a =>
+        `<span class="community-pill" style="background:${color}20;color:${color}">${a}</span>`
+      ).join('');
+      return `<div style="margin-bottom:.6rem"><div style="font-size:.75rem;color:var(--muted);margin-bottom:.25rem">Topluluk ${c.id} · ${c.size} sanatçı · ağırlık ${c.weight}</div>${tagsHtml}</div>`;
+    }).join('')
+  : '<div style="color:var(--dim);font-size:.8rem">Topluluk bulunamadı</div>';
+
+// D3 force-directed visualisation
+const viz = graphData.visualization || {nodes: [], edges: []};
+if (viz.nodes.length && window.d3) {
+  const svg = d3.select('#graphSvg');
+  const w = svg.node().getBoundingClientRect().width;
+  const h = 480;
+  svg.selectAll('*').remove();
+
+  const nodes = viz.nodes.map(n => ({...n}));
+  const links = viz.edges.map(e => ({...e}));
+
+  const maxScore = d3.max(nodes, d => d.score) || 1;
+  const maxWeight = d3.max(links, d => d.weight) || 1;
+  const radius = d => 4 + 16 * Math.sqrt((d.score || 0) / maxScore);
+  const colorFor = c => c >= 0 ? commPalette[c % commPalette.length] : '#666';
+
+  const sim = d3.forceSimulation(nodes)
+    .force('link', d3.forceLink(links).id(d => d.id).distance(60).strength(0.4))
+    .force('charge', d3.forceManyBody().strength(-180))
+    .force('center', d3.forceCenter(w / 2, h / 2))
+    .force('collision', d3.forceCollide().radius(d => radius(d) + 4));
+
+  const link = svg.append('g').selectAll('line').data(links).enter().append('line')
+    .attr('class', 'link')
+    .attr('stroke-width', d => 0.5 + 2 * Math.sqrt(d.weight / maxWeight));
+
+  const node = svg.append('g').selectAll('circle').data(nodes).enter().append('circle')
+    .attr('class', 'node')
+    .attr('r', radius)
+    .attr('fill', d => colorFor(d.community))
+    .call(d3.drag()
+      .on('start', (event, d) => { if (!event.active) sim.alphaTarget(0.3).restart(); d.fx = d.x; d.fy = d.y; })
+      .on('drag', (event, d) => { d.fx = event.x; d.fy = event.y; })
+      .on('end', (event, d) => { if (!event.active) sim.alphaTarget(0); d.fx = null; d.fy = null; })
+    );
+  node.append('title').text(d => `${d.id}\nPageRank: ${(d.score || 0).toFixed(5)}`);
+
+  const label = svg.append('g').selectAll('text').data(nodes).enter().append('text')
+    .attr('class', 'node-label')
+    .text(d => d.id.length > 16 ? d.id.slice(0, 14) + '…' : d.id)
+    .attr('dx', 8).attr('dy', 4);
+
+  sim.on('tick', () => {
+    link.attr('x1', d => d.source.x).attr('y1', d => d.source.y)
+        .attr('x2', d => d.target.x).attr('y2', d => d.target.y);
+    node.attr('cx', d => d.x).attr('cy', d => d.y);
+    label.attr('x', d => d.x).attr('y', d => d.y);
+  });
+} else {
+  document.getElementById('graphSvg').outerHTML =
+    '<div style="display:flex;align-items:center;justify-content:center;height:480px;color:var(--muted);font-size:.85rem">Grafiği üretmek için yeterli veri yok.</div>';
+}
+
+// ── Cluster (scikit-learn K-Means on benchmark pool) ──
+const clusterData = DATA.clustering || {};
+const clusterEl = document.getElementById('cluster-content');
+if (clusterData.status === 'ok') {
+  const uc = clusterData.user_cluster || {};
+  const clusterRows = (clusterData.clusters || []).map(c => {
+    const isMine = uc.cluster_id === c.id;
+    return `<div class="graph-stat" style="${isMine?'border-color:var(--green);box-shadow:0 0 0 1px var(--green-dim)':''}"><span>${c.label}</span><span class="v" style="color:${isMine?'var(--green)':'var(--muted)'}">${c.size} kullanıcı</span></div>`;
+  }).join('');
+  clusterEl.innerHTML = `
+    <div class="cluster-wrap">
+      <div class="cluster-hero">
+        <div class="cluster-label">Senin kümen</div>
+        <div class="cluster-name">${uc.label || '—'}</div>
+        <div class="cluster-meta">
+          ${uc.size || 0} kullanıcı bu kümede (toplam ${clusterData.n_users}'in %${uc.share_pct || 0}'i).<br>
+          K-Means optimum k = ${clusterData.k} · silhouette = ${clusterData.silhouette}
+        </div>
+      </div>
+      <div class="cluster-quality">
+        <h4>Tüm Kümeler</h4>
+        ${clusterRows}
+      </div>
+    </div>`;
+} else if (clusterData.status === 'insufficient_data') {
+  clusterEl.innerHTML = `
+    <div class="cluster-status-empty">
+      Henüz yeterli veri yok (${clusterData.current_samples || 0}/${clusterData.min_samples_required || 4} kullanıcı).
+      <br>Aşağıdaki <em>"Karşılaştır & Paylaş"</em> butonuna basıp benchmark'a katkıda bulun, küme analizi açılsın.
+    </div>`;
+} else {
+  clusterEl.innerHTML = `<div class="cluster-status-empty">Kümeleme şu anda çalıştırılamadı.</div>`;
+}
 
 // ── Benchmark (relative URL — same server) ──
 document.getElementById('btnBenchmark').addEventListener('click', async () => {

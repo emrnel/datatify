@@ -11,3 +11,24 @@ venv/
 *.egg-info/
 dist/
 build/
+
+# Synthetic / regenerable benchmark data and personal-data outputs
+benchmark_results/_synthetic_*.parquet/
+benchmark_results/real_data_report.txt
+benchmark_results/bench_log.txt
+
+# Submitted proposal binary (kept out of public repo)
+CSE458_Project_Proposal.docx
+
+# LaTeX build artefacts
+*.aux
+*.log
+*.out
+*.toc
+*.synctex.gz
+*.fls
+*.fdb_latexmk
+*.bbl
+*.blg
+*.lot
+*.lof
