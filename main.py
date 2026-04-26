@@ -50,19 +50,20 @@ _gemini_model = None
 _rpm_lock = threading.Lock()
 _rpm_window: deque = deque()
 
-GEMINI_TIMEOUT = 20         # seconds for a single API call
+GEMINI_TIMEOUT = 25         # seconds for a single API call (2.5 Flash can be slow)
 GEMINI_MAX_ATTEMPTS = 2     # tries per model before moving to the next
-GEMINI_BUDGET = 45          # hard cap on total wall time across all attempts
+GEMINI_BUDGET = 60          # hard cap on total wall time across all attempts
 GEMINI_RPM_LIMIT = 4        # in-process cap (free tier limit is 5 RPM)
 GEMINI_RPM_WINDOW = 60      # seconds in the sliding window
 
 # Model fallback chain. If the primary keeps 429ing or is unavailable, the
-# next one is tried. Order is "newest first" since 2.5 Flash has the best
-# quality but tightest free-tier quota; 1.5 Flash has more headroom.
+# next one is tried. gemini-flash-latest is an alias that always points to
+# the current stable Flash model and has more daily-quota headroom on free
+# tier than the named 2.5 endpoint.
 GEMINI_MODELS = (
     "gemini-2.5-flash",
     "gemini-2.0-flash",
-    "gemini-1.5-flash",
+    "gemini-flash-latest",
 )
 
 _RETRY_AFTER_RE = re.compile(r"retry[-_ ]?after[^\d]*(\d+)", re.IGNORECASE)
@@ -139,14 +140,40 @@ def _classify_error(exc: Exception):
 
 
 def _call_gemini_sync(client, model: str, prompt: str) -> dict:
-    """Blocking generate_content call. Raises on any error."""
-    response = client.models.generate_content(model=model, contents=prompt)
-    text = response.text.strip()
-    if text.startswith("```"):
-        text = text.split("\n", 1)[1] if "\n" in text else text[3:]
-        if text.endswith("```"):
-            text = text[:-3]
-    return json.loads(text)
+    """Blocking generate_content call. Raises on any error.
+
+    Asks Gemini for application/json directly so the response is guaranteed
+    to be valid JSON (no markdown fences, no prose preamble). Falls back to
+    a best-effort fence-stripping parse for older SDK versions that don't
+    accept the config kwarg."""
+    config = {"response_mime_type": "application/json"}
+    try:
+        response = client.models.generate_content(
+            model=model, contents=prompt, config=config,
+        )
+    except TypeError:
+        # SDK too old to accept `config` — fall back to plain call.
+        response = client.models.generate_content(model=model, contents=prompt)
+
+    text = (response.text or "").strip()
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        # Defense-in-depth: model occasionally wraps JSON in ```json fences
+        # even when asked for application/json. Strip and retry once.
+        cleaned = text
+        if cleaned.startswith("```"):
+            cleaned = cleaned.split("\n", 1)[1] if "\n" in cleaned else cleaned[3:]
+            if cleaned.endswith("```"):
+                cleaned = cleaned[:-3]
+            cleaned = cleaned.strip()
+        # Last resort: extract the outermost {...} block.
+        if not cleaned.startswith("{"):
+            start = cleaned.find("{")
+            end = cleaned.rfind("}")
+            if start != -1 and end > start:
+                cleaned = cleaned[start:end + 1]
+        return json.loads(cleaned)
 
 
 def _try_once(client, model: str, prompt: str, attempt_no: int):
