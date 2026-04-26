@@ -2,9 +2,13 @@
 """Datatify — Spotify Listening DNA web app (FastAPI + Gemini)."""
 import os
 import json
+import random
+import re
 import sqlite3
+import threading
 import time
 import traceback
+from collections import deque
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeout
 from contextlib import contextmanager
 from pathlib import Path
@@ -41,6 +45,29 @@ if STATIC.exists():
 
 _gemini_model = None
 
+# In-process sliding-window RPM throttle. Free tier is 5 RPM on 2.5 Flash;
+# we cap at 4 to leave a buffer for clock skew between us and Google.
+_rpm_lock = threading.Lock()
+_rpm_window: deque = deque()
+
+GEMINI_TIMEOUT = 20         # seconds for a single API call
+GEMINI_MAX_ATTEMPTS = 2     # tries per model before moving to the next
+GEMINI_BUDGET = 45          # hard cap on total wall time across all attempts
+GEMINI_RPM_LIMIT = 4        # in-process cap (free tier limit is 5 RPM)
+GEMINI_RPM_WINDOW = 60      # seconds in the sliding window
+
+# Model fallback chain. If the primary keeps 429ing or is unavailable, the
+# next one is tried. Order is "newest first" since 2.5 Flash has the best
+# quality but tightest free-tier quota; 1.5 Flash has more headroom.
+GEMINI_MODELS = (
+    "gemini-2.5-flash",
+    "gemini-2.0-flash",
+    "gemini-1.5-flash",
+)
+
+_RETRY_AFTER_RE = re.compile(r"retry[-_ ]?after[^\d]*(\d+)", re.IGNORECASE)
+
+
 def _get_gemini():
     global _gemini_model
     if _gemini_model is not None:
@@ -57,21 +84,93 @@ def _get_gemini():
         return None
 
 
-GEMINI_TIMEOUT = 20  # seconds
+def _throttle_rpm(deadline: float) -> bool:
+    """Reserve a slot in the sliding RPM window. Returns False if we'd have
+    to wait past the deadline (caller should give up)."""
+    while True:
+        with _rpm_lock:
+            now = time.time()
+            while _rpm_window and now - _rpm_window[0] >= GEMINI_RPM_WINDOW:
+                _rpm_window.popleft()
+            if len(_rpm_window) < GEMINI_RPM_LIMIT:
+                _rpm_window.append(now)
+                print(f"[GEMINI] RPM slot acquired ({len(_rpm_window)}/{GEMINI_RPM_LIMIT} in last {GEMINI_RPM_WINDOW}s)")
+                return True
+            wait = GEMINI_RPM_WINDOW - (now - _rpm_window[0]) + 0.05
+        if time.time() + wait > deadline:
+            print(f"[GEMINI] RPM throttle would wait {wait:.1f}s past budget — aborting")
+            return False
+        print(f"[GEMINI] RPM full ({len(_rpm_window)}/{GEMINI_RPM_LIMIT}), sleeping {min(wait, 5.0):.1f}s")
+        time.sleep(min(wait, 5.0))
 
 
-def _call_gemini_sync(client, prompt: str) -> dict | None:
-    """Blocking Gemini call — runs inside a thread with timeout."""
-    response = client.models.generate_content(
-        model="gemini-2.0-flash",
-        contents=prompt,
-    )
+def _classify_error(exc: Exception):
+    """Inspect a Gemini exception and return (status_code, retry_after_s, kind).
+    kind ∈ {'rate_limit', 'server', 'client', 'unknown'}."""
+    code = getattr(exc, "code", None) or getattr(exc, "status_code", None)
+    msg = str(exc)
+
+    if not isinstance(code, int):
+        for token in ("429", "503", "504", "502", "500", "404", "403", "400"):
+            if token in msg:
+                code = int(token)
+                break
+
+    retry_after = None
+    blob = msg
+    for attr in ("details", "response", "body"):
+        v = getattr(exc, attr, None)
+        if v is not None:
+            blob += " " + str(v)
+    m = _RETRY_AFTER_RE.search(blob)
+    if m:
+        try:
+            retry_after = int(m.group(1))
+        except ValueError:
+            retry_after = None
+
+    if code == 429:
+        return code, retry_after, "rate_limit"
+    if isinstance(code, int) and 500 <= code < 600:
+        return code, retry_after, "server"
+    if isinstance(code, int) and 400 <= code < 500:
+        return code, retry_after, "client"
+    return code, retry_after, "unknown"
+
+
+def _call_gemini_sync(client, model: str, prompt: str) -> dict:
+    """Blocking generate_content call. Raises on any error."""
+    response = client.models.generate_content(model=model, contents=prompt)
     text = response.text.strip()
     if text.startswith("```"):
         text = text.split("\n", 1)[1] if "\n" in text else text[3:]
         if text.endswith("```"):
             text = text[:-3]
     return json.loads(text)
+
+
+def _try_once(client, model: str, prompt: str, attempt_no: int):
+    """Run one timed attempt. Returns (result, error_tuple). Exactly one is
+    non-None. error_tuple is (kind, code, retry_after)."""
+    t0 = time.time()
+    try:
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            future = pool.submit(_call_gemini_sync, client, model, prompt)
+            result = future.result(timeout=GEMINI_TIMEOUT)
+        print(f"[GEMINI] attempt#{attempt_no} OK on {model} in {time.time()-t0:.1f}s")
+        return result, None
+    except FuturesTimeout:
+        elapsed = time.time() - t0
+        print(f"[GEMINI] attempt#{attempt_no} TIMEOUT on {model} after {elapsed:.1f}s "
+              f"(per-call timeout = {GEMINI_TIMEOUT}s)")
+        return None, ("timeout", None, None)
+    except Exception as e:
+        code, retry_after, kind = _classify_error(e)
+        elapsed = time.time() - t0
+        print(f"[GEMINI] attempt#{attempt_no} FAIL on {model} in {elapsed:.1f}s — "
+              f"kind={kind} http={code} retry_after={retry_after} "
+              f"err={type(e).__name__}: {str(e)[:200]}")
+        return None, (kind, code, retry_after)
 
 
 def gemini_character_analysis(metrics: dict) -> dict | None:
@@ -127,21 +226,87 @@ Yanıtını SADECE aşağıdaki JSON formatında ver (başka metin ekleme):
   "prediction": "Müzik zevkine dayalı yaratıcı bir tahmin (1-2 cümle, Türkçe)"
 }}"""
 
-    print(f"[GEMINI] Calling Gemini (timeout={GEMINI_TIMEOUT}s)...")
-    t0 = time.time()
-    try:
-        with ThreadPoolExecutor(max_workers=1) as pool:
-            future = pool.submit(_call_gemini_sync, client, prompt)
-            result = future.result(timeout=GEMINI_TIMEOUT)
-        print(f"[GEMINI] OK in {time.time()-t0:.1f}s")
-        return result
-    except FuturesTimeout:
-        print(f"[GEMINI] TIMEOUT after {GEMINI_TIMEOUT}s — skipping AI analysis")
-        return None
-    except Exception as e:
-        print(f"[GEMINI] ERROR in {time.time()-t0:.1f}s: {e}")
-        traceback.print_exc()
-        return None
+    t_start = time.time()
+    deadline = t_start + GEMINI_BUDGET
+    print(f"[GEMINI] starting (budget={GEMINI_BUDGET}s, models={list(GEMINI_MODELS)}, "
+          f"per-call timeout={GEMINI_TIMEOUT}s, max attempts/model={GEMINI_MAX_ATTEMPTS})")
+
+    attempt_no = 0
+    last_kind = None
+    last_code = None
+
+    for model in GEMINI_MODELS:
+        for retry_idx in range(GEMINI_MAX_ATTEMPTS):
+            attempt_no += 1
+
+            if time.time() >= deadline:
+                print(f"[GEMINI] budget exhausted before attempt#{attempt_no} on {model} — stopping")
+                break
+
+            if not _throttle_rpm(deadline):
+                # Can't get an RPM slot in time — no point in trying further models.
+                print(f"[GEMINI] giving up: cannot acquire RPM slot within budget "
+                      f"(elapsed={time.time()-t_start:.1f}s)")
+                return None
+
+            result, err = _try_once(client, model, prompt, attempt_no)
+            if result is not None:
+                print(f"[GEMINI] DONE in {time.time()-t_start:.1f}s "
+                      f"(model={model}, attempts={attempt_no})")
+                return result
+
+            kind, code, retry_after = err
+            last_kind, last_code = kind, code
+
+            # Non-retryable client errors (e.g. 400 bad request, 403 forbidden,
+            # 404 model not found): switch model immediately, no backoff.
+            if kind == "client" and code != 429:
+                print(f"[GEMINI] non-retryable client error (http={code}) on {model} — switching model")
+                break
+
+            # Last attempt on this model? Switch to next model.
+            if retry_idx == GEMINI_MAX_ATTEMPTS - 1:
+                print(f"[GEMINI] {GEMINI_MAX_ATTEMPTS} attempts exhausted on {model} "
+                      f"(last kind={kind}, http={code}) — switching model")
+                break
+
+            # Compute backoff delay.
+            if retry_after is not None:
+                delay = retry_after + random.uniform(0, 1.0)
+                reason = f"server-supplied Retry-After={retry_after}s"
+            elif kind == "rate_limit":
+                # 429 with no Retry-After — back off hard since RPM window is 60s.
+                base = 15 * (2 ** retry_idx)        # 15s, 30s
+                delay = base + random.uniform(0, 5)
+                reason = f"429 backoff base={base}s+jitter"
+            elif kind == "server" or kind == "timeout":
+                base = 2 ** retry_idx               # 1s, 2s
+                delay = base + random.uniform(0, base)
+                reason = f"{kind} backoff base={base}s+jitter"
+            else:
+                base = 2 ** retry_idx
+                delay = base + random.uniform(0, base)
+                reason = f"unknown-error backoff base={base}s+jitter"
+
+            # Don't sleep past the budget.
+            remaining = deadline - time.time()
+            if delay >= remaining:
+                print(f"[GEMINI] backoff {delay:.1f}s ({reason}) exceeds remaining budget "
+                      f"{remaining:.1f}s — switching model instead")
+                break
+
+            print(f"[GEMINI] retrying on {model} in {delay:.1f}s ({reason}, "
+                  f"next attempt {retry_idx+2}/{GEMINI_MAX_ATTEMPTS})")
+            time.sleep(delay)
+
+        if time.time() >= deadline:
+            print(f"[GEMINI] budget exhausted after {attempt_no} attempts — stopping model loop")
+            break
+
+    elapsed = time.time() - t_start
+    print(f"[GEMINI] all paths failed after {attempt_no} attempts in {elapsed:.1f}s "
+          f"(last kind={last_kind}, http={last_code}) — dashboard will render without AI analysis")
+    return None
 
 
 # ─── Database (benchmark) ────────────────────────────────────────────────────
