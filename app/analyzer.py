@@ -4,8 +4,8 @@ import math
 from collections import defaultdict
 from datetime import datetime, timedelta
 
-from constants import SESSION_GAP_MINUTES, TZ_OFFSETS
-from personality import compute_badges, compute_archetype, compute_level, compute_radar
+from .constants import SESSION_GAP_MINUTES, TZ_OFFSETS
+from .personality import compute_badges, compute_archetype, compute_level, compute_radar
 
 
 def _entropy(count_dict: dict) -> float:
@@ -20,6 +20,30 @@ def _parse_ts(r: dict):
         return datetime.fromisoformat(r["ts"].replace("Z", "+00:00"))
     except Exception:
         return None
+
+
+def _categorize_platform(raw: str) -> str:
+    plat = (raw or "unknown").split("(")[0].strip().lower()
+    if any(k in plat for k in ("android", "ios", "iphone")):
+        return "Mobil"
+    if any(k in plat for k in ("web", "chrome", "firefox")):
+        return "Web"
+    if any(k in plat for k in ("desktop", "windows", "mac")):
+        return "Masaüstü"
+    return plat[:20] if len(plat) > 20 else (plat or "Diğer")
+
+
+def _compute_habit_loop(sorted_tracks: list[dict]) -> float:
+    pair_counts: dict[tuple, int] = defaultdict(int)
+    for i in range(len(sorted_tracks) - 1):
+        r1, r2 = sorted_tracks[i], sorted_tracks[i + 1]
+        k1 = (r1.get("master_metadata_track_name"), r1.get("master_metadata_album_artist_name"))
+        k2 = (r2.get("master_metadata_track_name"), r2.get("master_metadata_album_artist_name"))
+        if k1[0] and k2[0]:
+            pair_counts[(k1, k2)] += 1
+    total_pairs = len(sorted_tracks) - 1
+    repeated_pairs = sum(1 for c in pair_counts.values() if c > 1)
+    return round(100 * repeated_pairs / total_pairs, 1) if total_pairs else 0
 
 
 def _compute_sessions(tracks: list[dict]):
@@ -133,16 +157,7 @@ def analyze(records: list[dict]) -> dict:
         if album and album.strip() and album != "Bilinmeyen":
             album_play_count += 1
 
-        plat_raw = (r.get("platform") or "unknown").strip()
-        plat = plat_raw.split("(")[0].strip().lower()
-        if any(k in plat for k in ("android", "ios", "iphone")):
-            plat_cat = "Mobil"
-        elif any(k in plat for k in ("web", "chrome", "firefox")):
-            plat_cat = "Web"
-        elif any(k in plat for k in ("desktop", "windows", "mac")):
-            plat_cat = "Masaüstü"
-        else:
-            plat_cat = plat[:20] if len(plat) > 20 else (plat or "Diğer")
+        plat_cat = _categorize_platform(r.get("platform") or "")
         by_platform[plat_cat]["ms"] += ms
         by_platform[plat_cat]["count"] += 1
 
@@ -192,16 +207,7 @@ def analyze(records: list[dict]) -> dict:
     avg_novelty = sum(novelty_by_month.values()) / len(novelty_by_month) if novelty_by_month else 0
 
     # Habit loop
-    pair_counts: dict[tuple, int] = defaultdict(int)
-    for i in range(len(sorted_by_ts) - 1):
-        r1, r2 = sorted_by_ts[i], sorted_by_ts[i + 1]
-        k1 = (r1.get("master_metadata_track_name"), r1.get("master_metadata_album_artist_name"))
-        k2 = (r2.get("master_metadata_track_name"), r2.get("master_metadata_album_artist_name"))
-        if k1[0] and k2[0]:
-            pair_counts[(k1, k2)] += 1
-    total_pairs = len(sorted_by_ts) - 1
-    repeated_pairs = sum(1 for c in pair_counts.values() if c > 1)
-    habit_loop_score = round(100 * repeated_pairs / total_pairs, 1) if total_pairs else 0
+    habit_loop_score = _compute_habit_loop(sorted_by_ts)
 
     # Yearly growth
     years_sorted = sorted(by_year.keys())
