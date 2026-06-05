@@ -11,6 +11,7 @@ TZ_OFFSETS: dict[str, int] = {
 }
 
 SESSION_GAP_MINUTES: int = 30
+AVG_TRACK_DURATION_SEC: int = 210
 
 METRIC_KEYS: list[str] = [
     "impatience_score_pct",

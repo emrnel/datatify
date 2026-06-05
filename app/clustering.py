@@ -19,7 +19,7 @@ from sklearn.cluster import KMeans
 from sklearn.metrics import silhouette_score
 from sklearn.preprocessing import StandardScaler
 
-from constants import METRIC_KEYS
+from .constants import METRIC_KEYS
 
 
 def _vectors_from_rows(rows: list[dict]) -> np.ndarray:
@@ -27,6 +27,15 @@ def _vectors_from_rows(rows: list[dict]) -> np.ndarray:
         [[float(r.get(k, 0) or 0) for k in METRIC_KEYS] for r in rows],
         dtype=np.float64,
     )
+
+
+def _validate_rows(rows: list[dict]) -> None:
+    """Raise ValueError if the first row is missing a required METRIC_KEY."""
+    if not rows:
+        return
+    missing = set(METRIC_KEYS) - set(rows[0].keys())
+    if missing:
+        raise ValueError(f"Row missing required METRIC_KEYS: {sorted(missing)}")
 
 
 def find_optimal_k(
@@ -115,6 +124,7 @@ def cluster_users(
         user_vector: optional dict for the current user (so we can return
                      which cluster they belong to without re-fitting).
     """
+    _validate_rows(rows)
     if len(rows) < 4:
         return {
             "status": "insufficient_data",

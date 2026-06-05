@@ -4,8 +4,8 @@ import math
 from collections import defaultdict
 from datetime import datetime, timedelta
 
-from constants import SESSION_GAP_MINUTES, TZ_OFFSETS
-from personality import compute_badges, compute_archetype, compute_level, compute_radar
+from .constants import AVG_TRACK_DURATION_SEC, SESSION_GAP_MINUTES, TZ_OFFSETS
+from .personality import compute_badges, compute_archetype, compute_level, compute_radar
 
 
 def _entropy(count_dict: dict) -> float:
@@ -20,6 +20,30 @@ def _parse_ts(r: dict):
         return datetime.fromisoformat(r["ts"].replace("Z", "+00:00"))
     except Exception:
         return None
+
+
+def _categorize_platform(raw: str) -> str:
+    plat = (raw or "unknown").split("(")[0].strip().lower()
+    if any(k in plat for k in ("android", "ios", "iphone")):
+        return "Mobil"
+    if any(k in plat for k in ("web", "chrome", "firefox")):
+        return "Web"
+    if any(k in plat for k in ("desktop", "windows", "mac")):
+        return "Masaüstü"
+    return plat[:20] if len(plat) > 20 else (plat or "Diğer")
+
+
+def _compute_habit_loop(sorted_tracks: list[dict]) -> float:
+    pair_counts: dict[tuple, int] = defaultdict(int)
+    for i in range(len(sorted_tracks) - 1):
+        r1, r2 = sorted_tracks[i], sorted_tracks[i + 1]
+        k1 = (r1.get("master_metadata_track_name"), r1.get("master_metadata_album_artist_name"))
+        k2 = (r2.get("master_metadata_track_name"), r2.get("master_metadata_album_artist_name"))
+        if k1[0] and k2[0]:
+            pair_counts[(k1, k2)] += 1
+    total_pairs = len(sorted_tracks) - 1
+    repeated_pairs = sum(1 for c in pair_counts.values() if c > 1)
+    return round(100 * repeated_pairs / total_pairs, 1) if total_pairs else 0
 
 
 def _compute_sessions(tracks: list[dict]):
@@ -56,16 +80,8 @@ def _compute_sessions(tracks: list[dict]):
     return sessions, len(sessions), avg_h
 
 
-def analyze(records: list[dict]) -> dict:
-    """Run full analysis on a list of streaming history records.
-    Returns a metrics dict ready for JSON serialisation / dashboard rendering.
-    """
-    tracks = [x for x in records if x.get("master_metadata_track_name")]
-
-    total_ms = sum(x.get("ms_played", 0) or 0 for x in tracks)
-    total_hours = total_ms / (1000 * 3600)
-    total_days = total_hours / 24
-
+def _aggregate_records(tracks: list[dict]) -> dict:
+    """Single pass: return all per-play accumulators from streaming records."""
     artists = defaultdict(lambda: {"ms": 0, "count": 0, "skipped": 0})
     songs = defaultdict(lambda: {"ms": 0, "count": 0, "artist": None})
     albums = defaultdict(lambda: {"ms": 0, "count": 0})
@@ -77,7 +93,6 @@ def analyze(records: list[dict]) -> dict:
     by_country = defaultdict(lambda: {"ms": 0, "count": 0})
     reason_start_counts = defaultdict(int)
     reason_end_counts = defaultdict(int)
-
     skipped_count = 0
     completed_count = 0
     shuffle_count = 0
@@ -133,16 +148,7 @@ def analyze(records: list[dict]) -> dict:
         if album and album.strip() and album != "Bilinmeyen":
             album_play_count += 1
 
-        plat_raw = (r.get("platform") or "unknown").strip()
-        plat = plat_raw.split("(")[0].strip().lower()
-        if any(k in plat for k in ("android", "ios", "iphone")):
-            plat_cat = "Mobil"
-        elif any(k in plat for k in ("web", "chrome", "firefox")):
-            plat_cat = "Web"
-        elif any(k in plat for k in ("desktop", "windows", "mac")):
-            plat_cat = "Masaüstü"
-        else:
-            plat_cat = plat[:20] if len(plat) > 20 else (plat or "Diğer")
+        plat_cat = _categorize_platform(r.get("platform") or "")
         by_platform[plat_cat]["ms"] += ms
         by_platform[plat_cat]["count"] += 1
 
@@ -164,6 +170,63 @@ def analyze(records: list[dict]) -> dict:
             skipped_count += 1
         if (r.get("reason_end") or "").lower() == "endplay":
             completed_count += 1
+
+    return {
+        "artists": artists,
+        "songs": songs,
+        "albums": albums,
+        "by_year": by_year,
+        "by_month": by_month,
+        "by_hour": by_hour,
+        "by_weekday": by_weekday,
+        "by_platform": by_platform,
+        "by_country": by_country,
+        "reason_start_counts": reason_start_counts,
+        "reason_end_counts": reason_end_counts,
+        "skipped_count": skipped_count,
+        "completed_count": completed_count,
+        "shuffle_count": shuffle_count,
+        "offline_ms": offline_ms,
+        "incognito_count": incognito_count,
+        "first_listen": first_listen,
+        "first_listen_track": first_listen_track,
+        "early_skip_count": early_skip_count,
+        "skipped_ms_sum": skipped_ms_sum,
+        "focus_play_count": focus_play_count,
+        "album_play_count": album_play_count,
+    }
+
+
+def analyze(records: list[dict]) -> dict:
+    """Run full analysis on a list of streaming history records.
+    Returns a metrics dict ready for JSON serialisation / dashboard rendering.
+    """
+    tracks = [x for x in records if x.get("master_metadata_track_name")]
+
+    total_ms = sum(x.get("ms_played", 0) or 0 for x in tracks)
+    total_hours = total_ms / (1000 * 3600)
+    total_days = total_hours / 24
+
+    acc = _aggregate_records(tracks)
+    artists = acc["artists"]
+    songs = acc["songs"]
+    by_year = acc["by_year"]
+    by_month = acc["by_month"]
+    by_hour = acc["by_hour"]
+    by_weekday = acc["by_weekday"]
+    by_platform = acc["by_platform"]
+    by_country = acc["by_country"]
+    skipped_count = acc["skipped_count"]
+    completed_count = acc["completed_count"]
+    shuffle_count = acc["shuffle_count"]
+    offline_ms = acc["offline_ms"]
+    incognito_count = acc["incognito_count"]
+    first_listen = acc["first_listen"]
+    first_listen_track = acc["first_listen_track"]
+    early_skip_count = acc["early_skip_count"]
+    skipped_ms_sum = acc["skipped_ms_sum"]
+    focus_play_count = acc["focus_play_count"]
+    album_play_count = acc["album_play_count"]
 
     total_plays = len(tracks)
     if total_plays == 0:
@@ -192,16 +255,7 @@ def analyze(records: list[dict]) -> dict:
     avg_novelty = sum(novelty_by_month.values()) / len(novelty_by_month) if novelty_by_month else 0
 
     # Habit loop
-    pair_counts: dict[tuple, int] = defaultdict(int)
-    for i in range(len(sorted_by_ts) - 1):
-        r1, r2 = sorted_by_ts[i], sorted_by_ts[i + 1]
-        k1 = (r1.get("master_metadata_track_name"), r1.get("master_metadata_album_artist_name"))
-        k2 = (r2.get("master_metadata_track_name"), r2.get("master_metadata_album_artist_name"))
-        if k1[0] and k2[0]:
-            pair_counts[(k1, k2)] += 1
-    total_pairs = len(sorted_by_ts) - 1
-    repeated_pairs = sum(1 for c in pair_counts.values() if c > 1)
-    habit_loop_score = round(100 * repeated_pairs / total_pairs, 1) if total_pairs else 0
+    habit_loop_score = _compute_habit_loop(sorted_by_ts)
 
     # Yearly growth
     years_sorted = sorted(by_year.keys())
@@ -220,7 +274,7 @@ def analyze(records: list[dict]) -> dict:
     top10_artist_plays = sum(d["count"] for _, d in top_artists)
     top1_song_plays = top_songs[0][1]["count"] if top_songs else 0
     avg_listen_sec = (total_ms / 1000) / total_plays
-    avg_track_duration_sec = 210
+    avg_track_duration_sec = AVG_TRACK_DURATION_SEC
     avg_listening_ratio = min(1.0, avg_listen_sec / avg_track_duration_sec)
     skip_latency_ratio = (
         (skipped_ms_sum / 1000) / (avg_track_duration_sec * skipped_count)

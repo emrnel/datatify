@@ -1,4 +1,4 @@
-from personality import compute_level, compute_archetype, compute_radar, compute_badges
+from app.personality import compute_level, compute_archetype, compute_radar, compute_badges
 
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────

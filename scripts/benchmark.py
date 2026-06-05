@@ -24,15 +24,22 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 import time
 from pathlib import Path
 
 import pandas as pd
 
-from synthetic_data import generate_records
+_HERE = Path(__file__).resolve().parent
+_ROOT = _HERE.parent
+for _p in (_ROOT, _HERE):
+    if str(_p) not in sys.path:
+        sys.path.insert(0, str(_p))
+
+from synthetic_data import generate_records  # noqa: E402
 
 DEFAULT_SCALES = [130_000, 500_000, 1_000_000]
-RESULTS_DIR = Path(__file__).resolve().parent / "benchmark_results"
+RESULTS_DIR = _ROOT / "benchmark_results"
 
 
 def _time_it(fn, *args, **kwargs):
@@ -42,14 +49,14 @@ def _time_it(fn, *args, **kwargs):
 
 
 def benchmark_python(records: list[dict]) -> float:
-    from analyzer import analyze
+    from app.analyzer import analyze
 
     elapsed, _ = _time_it(analyze, records)
     return elapsed
 
 
 def benchmark_pandas(records: list[dict]) -> float:
-    from data_pipeline import load_records, compute_metrics_pandas
+    from app.data_pipeline import load_records, compute_metrics_pandas
 
     df = load_records(records)
     elapsed, _ = _time_it(compute_metrics_pandas, df)
@@ -66,7 +73,7 @@ def benchmark_spark(records: list[dict]) -> float:
         crashes on machines where Spark binds to ``kubernetes.docker.internal``.
     On GCP Dataproc, use ``compute_metrics_spark`` with a GCS Parquet URI.
     """
-    from spark_pipeline import (
+    from app.spark_pipeline import (
         spark_session,
         compute_metrics_spark_from_records,
     )
