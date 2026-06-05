@@ -29,6 +29,15 @@ def _vectors_from_rows(rows: list[dict]) -> np.ndarray:
     )
 
 
+def _validate_rows(rows: list[dict]) -> None:
+    """Raise ValueError if the first row is missing a required METRIC_KEY."""
+    if not rows:
+        return
+    missing = set(METRIC_KEYS) - set(rows[0].keys())
+    if missing:
+        raise ValueError(f"Row missing required METRIC_KEYS: {sorted(missing)}")
+
+
 def find_optimal_k(
     X_scaled: np.ndarray, k_min: int = 2, k_max: int = 8
 ) -> dict:
@@ -115,6 +124,7 @@ def cluster_users(
         user_vector: optional dict for the current user (so we can return
                      which cluster they belong to without re-fitting).
     """
+    _validate_rows(rows)
     if len(rows) < 4:
         return {
             "status": "insufficient_data",

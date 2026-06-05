@@ -72,6 +72,7 @@ All shared constants. Import from here, never redefine locally.
 ```python
 TZ_OFFSETS: dict[str, int]          # country code → UTC offset hours (30 countries)
 SESSION_GAP_MINUTES: int = 30       # gap that breaks a listening session
+AVG_TRACK_DURATION_SEC: int = 210   # assumed average track length for ratio metrics
 METRIC_KEYS: list[str]              # 15 benchmark metric field names
 REQUIRED_COLS: list[str]            # 4 columns a record must have
 OPTIONAL_COLS: list[str]            # 9 enrichment columns
@@ -90,10 +91,13 @@ Takes raw Spotify JSON records, returns the full metrics dict used by the dashbo
 
 Private helpers (testable in isolation):
 ```python
-_categorize_platform(raw: str) -> str        # "android (os=10)" → "Mobil"
-_compute_habit_loop(sorted_tracks) -> float  # % consecutive (track,artist) pairs that repeat
+_categorize_platform(raw: str) -> str                # "android (os=10)" → "Mobil"
+_compute_habit_loop(sorted_tracks) -> float          # % consecutive (track,artist) pairs that repeat
 _compute_sessions(tracks) -> (list, int, float)
+_aggregate_records(tracks) -> dict                   # single pass → all per-play accumulators
 ```
+
+`_aggregate_records` owns the full for-loop (artists, songs, by_year, by_month, by_hour, by_weekday, by_platform, by_country, skip/focus/shuffle counters, first_listen maps). `analyze()` calls it and unpacks the returned dict. This makes aggregation logic independently testable without running the full pipeline.
 
 Output shape:
 ```python
@@ -131,18 +135,24 @@ Level thresholds: Newbie(0) → Casual(50h) → Listener(200h) → Enthusiast(50
 cluster_users(rows, *, user_vector=None, k_min=2, k_max=8) -> dict
 find_optimal_k(X_scaled) -> dict    # elbow + silhouette
 label_cluster(centroid) -> str      # heuristic names: "Night Explorers", "Loyal Repeaters", etc.
+_validate_rows(rows) -> None        # raises ValueError if first row is missing a METRIC_KEY
 ```
 Clusters anonymous benchmark submissions. Returns which cluster the current user falls into.
 
+`_validate_rows` is called at the top of `cluster_users` — a missing METRIC_KEY raises `ValueError` with a clear message at the seam rather than a cryptic numpy error deep in the call stack.
+
 ### `app/graph_analysis.py` — Artist Transition Graph
 ```python
-build_artist_transition_graph(records) -> nx.DiGraph
+build_artist_transition_graph(records) -> tuple[nx.DiGraph, dict]  # (G, parse_diagnostics)
 analyze_listening_graph(records, ...) -> dict   # full pipeline
 compute_pagerank(G) -> list[dict]
 detect_communities(G) -> list[dict]             # label propagation
 connected_components_summary(G) -> dict
+_parse_artist_timeline(records) -> tuple[list[tuple[datetime, str]], dict]
 ```
 Edges: artist A → artist B when B is played within 30 min of A. Used for force-directed graph in dashboard.
+
+`_parse_artist_timeline` does the filtering pass and returns `(parsed_pairs, diagnostics)` where `diagnostics = {kept, dropped_no_artist, dropped_bad_ts}`. `build_artist_transition_graph` calls it and returns `(G, diagnostics)`. `analyze_listening_graph` merges `parse_diagnostics` into the `summary` key of its return dict — so every graph response exposes how many records were dropped and why.
 
 ### `app/data_pipeline.py` — Pandas Reference Pipeline
 Mirrors `analyzer.py` logic using Pandas groupBy. Used in benchmarks, not in the live request path. Key export: `compute_metrics_pandas(df)`.
@@ -187,6 +197,7 @@ Models tried in order: `gemini-2.5-flash` → `gemini-2.0-flash` → `gemini-fla
 - `BASE_DIR` = project root (`Path(__file__).parent.parent`)
 - `TEMPLATES` = `BASE_DIR / "templates"`
 - Routes call domain modules and return; no business logic inline
+- `render_dashboard(metrics, template_path) -> str` — serialises metrics to JSON, injects into dashboard template, raises HTTP 500 on serialisation failure. The `/analyze` route calls this instead of doing the string-replace inline.
 
 ---
 
@@ -275,13 +286,16 @@ Used for: percentile ranking, global clustering.
 ## Tests
 
 Run with: `.venv/bin/python -m pytest tests/ -v`  
-38 tests, ~0.05s. No network, no file I/O.
+70 tests, ~1.7s. No network, no HTTP server.
 
 | File | Count | What |
 |------|-------|------|
 | `test_constants.py` | 8 | smoke tests on constant shapes/values |
 | `test_personality.py` | 21 | unit tests for all 4 pure functions |
 | `test_analyzer.py` | 9 | integration: `analyze()` on synthetic records |
+| `test_db.py` | 7 | `extract_metric_vector`, `submit`, `compute_percentiles`, `stats`, `all_users` — uses in-memory SQLite via `tmp_path` + `monkeypatch` |
+| `test_clustering.py` | 11 | `_validate_rows`, `label_cluster` boundary tests, `cluster_users` edge cases |
+| `test_graph.py` | 14 | `_parse_artist_timeline` diagnostics, `build_artist_transition_graph` edge/gap/self-loop, `analyze_listening_graph` parse_diagnostics in summary |
 
 ---
 
@@ -300,11 +314,14 @@ Run with: `.venv/bin/python -m pytest tests/ -v`
 
 - **`app/constants.py`** is the single source of truth — never redefine `SESSION_GAP_MINUTES`, `TZ_OFFSETS`, `METRIC_KEYS`, etc. in other modules.
 - **`app/personality.py`** contains only pure functions — no side effects, no DB, no I/O. Testable in isolation.
+- **`app/constants.py`** is the single source of truth — never redefine `SESSION_GAP_MINUTES`, `AVG_TRACK_DURATION_SEC`, `TZ_OFFSETS`, `METRIC_KEYS`, etc. in other modules.
 - **`app/db.py`** owns all SQLite access and the metric-vector bridge — `extract_metric_vector` is the only place that maps `analyze()` output keys to METRIC_KEYS. Two keys diverge from the `metrikler` namespace: `total_hours` ← `bizim_rapor.toplam_saat`, `shuffle_pct` ← `bizim_rapor.shuffle_orani_pct`.
 - **`app/gemini.py`** is fully self-contained — no FastAPI imports. The entire retry/throttle/fallback system lives here and is testable without the web layer.
-- **`app/main.py` is thin** — routes parse input, call domain modules, return output. No business logic, no SQL, no AI calls inline.
+- **`app/main.py` is thin** — routes parse input, call domain modules, return output. No business logic, no SQL, no AI calls inline. `render_dashboard()` is the only place that serialises metrics to HTML.
 - **`analyzer.py` vs `data_pipeline.py`**: both compute the same metrics. `analyzer.py` is the live request path (pure Python, fast for typical uploads). `data_pipeline.py` is the Pandas reference used only in benchmarks.
-- **Dashboard rendering**: `main.py` does a string replace of `SPOTIFY_DATA_PLACEHOLDER` in `dashboard.html` with the full JSON blob. No templating engine.
+- **`_aggregate_records()` in `analyzer.py`** — the single-pass accumulator. All per-play bucketing lives here. `analyze()` calls it and unpacks the result; nothing else should replicate that loop.
+- **`build_artist_transition_graph()` returns `(G, diagnostics)`** — callers must unpack the tuple. Only `analyze_listening_graph()` calls it. Diagnostics are merged into `summary["parse_diagnostics"]` in every graph response.
+- **`_validate_rows()` in `clustering.py`** — always the first call inside `cluster_users()`. If METRIC_KEYS changes, the error surfaces here, not inside numpy.
 - **`BASE_DIR`** in `app/main.py` is `Path(__file__).parent.parent` (project root) — templates and DB live at project root, not inside `app/`.
 
 ---

@@ -33,21 +33,40 @@ def _parse_ts(record: dict) -> datetime | None:
         return None
 
 
-def build_artist_transition_graph(records: Iterable[dict]) -> nx.DiGraph:
+def _parse_artist_timeline(
+    records: Iterable[dict],
+) -> tuple[list[tuple[datetime, str]], dict]:
+    """Parse records into (ts, artist) pairs, returning filtering diagnostics."""
+    parsed: list[tuple[datetime, str]] = []
+    dropped_no_artist = 0
+    dropped_bad_ts = 0
+    for r in records:
+        artist = r.get("master_metadata_album_artist_name")
+        ts = _parse_ts(r)
+        if not artist:
+            dropped_no_artist += 1
+        elif ts is None:
+            dropped_bad_ts += 1
+        else:
+            parsed.append((ts, artist))
+    return parsed, {
+        "kept": len(parsed),
+        "dropped_no_artist": dropped_no_artist,
+        "dropped_bad_ts": dropped_bad_ts,
+    }
+
+
+def build_artist_transition_graph(records: Iterable[dict]) -> tuple[nx.DiGraph, dict]:
     """Build a weighted directed graph of artist→artist transitions.
 
     Two consecutive plays form an edge only if the gap between them is
     less than ``SESSION_GAP_MINUTES`` (i.e. they belong to the same session).
     Self-loops (same artist played twice) are intentionally kept to detect
     repetitive single-artist sessions.
-    """
-    parsed: list[tuple[datetime, str]] = []
-    for r in records:
-        artist = r.get("master_metadata_album_artist_name")
-        ts = _parse_ts(r)
-        if artist and ts:
-            parsed.append((ts, artist))
 
+    Returns (G, diagnostics) where diagnostics counts kept/dropped records.
+    """
+    parsed, diagnostics = _parse_artist_timeline(records)
     parsed.sort(key=lambda x: x[0])
 
     edge_weights: dict[tuple[str, str], int] = defaultdict(int)
@@ -61,7 +80,7 @@ def build_artist_transition_graph(records: Iterable[dict]) -> nx.DiGraph:
     G = nx.DiGraph()
     for (src, dst), w in edge_weights.items():
         G.add_edge(src, dst, weight=w)
-    return G
+    return G, diagnostics
 
 
 def compute_pagerank(G: nx.DiGraph, top_k: int = 20) -> list[dict]:
@@ -156,12 +175,13 @@ def analyze_listening_graph(
     viz_top_n_nodes: int = 60,
 ) -> dict:
     """Full pipeline used by the FastAPI endpoint and dashboard."""
-    G = build_artist_transition_graph(records)
+    G, parse_diagnostics = build_artist_transition_graph(records)
 
     pagerank = compute_pagerank(G, top_k=pagerank_top_k)
     communities = detect_communities(G, top_k=community_top_k)
     components = connected_components_summary(G, top_k=5)
     summary = graph_summary(G)
+    summary["parse_diagnostics"] = parse_diagnostics
 
     viz = _build_visualization_subgraph(
         G, pagerank, communities, top_n=viz_top_n_nodes

@@ -4,7 +4,7 @@ import math
 from collections import defaultdict
 from datetime import datetime, timedelta
 
-from .constants import SESSION_GAP_MINUTES, TZ_OFFSETS
+from .constants import AVG_TRACK_DURATION_SEC, SESSION_GAP_MINUTES, TZ_OFFSETS
 from .personality import compute_badges, compute_archetype, compute_level, compute_radar
 
 
@@ -80,16 +80,8 @@ def _compute_sessions(tracks: list[dict]):
     return sessions, len(sessions), avg_h
 
 
-def analyze(records: list[dict]) -> dict:
-    """Run full analysis on a list of streaming history records.
-    Returns a metrics dict ready for JSON serialisation / dashboard rendering.
-    """
-    tracks = [x for x in records if x.get("master_metadata_track_name")]
-
-    total_ms = sum(x.get("ms_played", 0) or 0 for x in tracks)
-    total_hours = total_ms / (1000 * 3600)
-    total_days = total_hours / 24
-
+def _aggregate_records(tracks: list[dict]) -> dict:
+    """Single pass: return all per-play accumulators from streaming records."""
     artists = defaultdict(lambda: {"ms": 0, "count": 0, "skipped": 0})
     songs = defaultdict(lambda: {"ms": 0, "count": 0, "artist": None})
     albums = defaultdict(lambda: {"ms": 0, "count": 0})
@@ -101,7 +93,6 @@ def analyze(records: list[dict]) -> dict:
     by_country = defaultdict(lambda: {"ms": 0, "count": 0})
     reason_start_counts = defaultdict(int)
     reason_end_counts = defaultdict(int)
-
     skipped_count = 0
     completed_count = 0
     shuffle_count = 0
@@ -180,6 +171,63 @@ def analyze(records: list[dict]) -> dict:
         if (r.get("reason_end") or "").lower() == "endplay":
             completed_count += 1
 
+    return {
+        "artists": artists,
+        "songs": songs,
+        "albums": albums,
+        "by_year": by_year,
+        "by_month": by_month,
+        "by_hour": by_hour,
+        "by_weekday": by_weekday,
+        "by_platform": by_platform,
+        "by_country": by_country,
+        "reason_start_counts": reason_start_counts,
+        "reason_end_counts": reason_end_counts,
+        "skipped_count": skipped_count,
+        "completed_count": completed_count,
+        "shuffle_count": shuffle_count,
+        "offline_ms": offline_ms,
+        "incognito_count": incognito_count,
+        "first_listen": first_listen,
+        "first_listen_track": first_listen_track,
+        "early_skip_count": early_skip_count,
+        "skipped_ms_sum": skipped_ms_sum,
+        "focus_play_count": focus_play_count,
+        "album_play_count": album_play_count,
+    }
+
+
+def analyze(records: list[dict]) -> dict:
+    """Run full analysis on a list of streaming history records.
+    Returns a metrics dict ready for JSON serialisation / dashboard rendering.
+    """
+    tracks = [x for x in records if x.get("master_metadata_track_name")]
+
+    total_ms = sum(x.get("ms_played", 0) or 0 for x in tracks)
+    total_hours = total_ms / (1000 * 3600)
+    total_days = total_hours / 24
+
+    acc = _aggregate_records(tracks)
+    artists = acc["artists"]
+    songs = acc["songs"]
+    by_year = acc["by_year"]
+    by_month = acc["by_month"]
+    by_hour = acc["by_hour"]
+    by_weekday = acc["by_weekday"]
+    by_platform = acc["by_platform"]
+    by_country = acc["by_country"]
+    skipped_count = acc["skipped_count"]
+    completed_count = acc["completed_count"]
+    shuffle_count = acc["shuffle_count"]
+    offline_ms = acc["offline_ms"]
+    incognito_count = acc["incognito_count"]
+    first_listen = acc["first_listen"]
+    first_listen_track = acc["first_listen_track"]
+    early_skip_count = acc["early_skip_count"]
+    skipped_ms_sum = acc["skipped_ms_sum"]
+    focus_play_count = acc["focus_play_count"]
+    album_play_count = acc["album_play_count"]
+
     total_plays = len(tracks)
     if total_plays == 0:
         return {"error": "Hiç müzik kaydı bulunamadı."}
@@ -226,7 +274,7 @@ def analyze(records: list[dict]) -> dict:
     top10_artist_plays = sum(d["count"] for _, d in top_artists)
     top1_song_plays = top_songs[0][1]["count"] if top_songs else 0
     avg_listen_sec = (total_ms / 1000) / total_plays
-    avg_track_duration_sec = 210
+    avg_track_duration_sec = AVG_TRACK_DURATION_SEC
     avg_listening_ratio = min(1.0, avg_listen_sec / avg_track_duration_sec)
     skip_latency_ratio = (
         (skipped_ms_sum / 1000) / (avg_track_duration_sec * skipped_count)

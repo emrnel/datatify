@@ -54,6 +54,16 @@ class MetricsSubmission(BaseModel):
     shuffle_pct: float = 0
 
 
+def render_dashboard(metrics: dict, template_path: Path) -> str:
+    """Serialise metrics to JSON and inject into the dashboard template."""
+    try:
+        json_str = json.dumps(metrics, ensure_ascii=False)
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(status_code=500, detail=f"Metrics serialisation failed: {exc}")
+    template = template_path.read_text(encoding="utf-8")
+    return template.replace("SPOTIFY_DATA_PLACEHOLDER", json_str)
+
+
 # ─── Routes ──────────────────────────────────────────────────────────────────
 
 @app.get("/", response_class=HTMLResponse)
@@ -127,10 +137,8 @@ async def analyze_files(files: list[UploadFile] = File(...)):
     if ai:
         metrics["gemini_analysis"] = ai
 
-    template = (TEMPLATES / "dashboard.html").read_text(encoding="utf-8")
-    html = template.replace("SPOTIFY_DATA_PLACEHOLDER", json.dumps(metrics, ensure_ascii=False))
     print(f"[DONE] Total request time: {time.time()-t_start:.1f}s")
-    return HTMLResponse(content=html)
+    return HTMLResponse(content=render_dashboard(metrics, TEMPLATES / "dashboard.html"))
 
 
 # ─── Benchmark API ───────────────────────────────────────────────────────────
