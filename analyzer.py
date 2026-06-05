@@ -4,15 +4,8 @@ import math
 from collections import defaultdict
 from datetime import datetime, timedelta
 
-SESSION_GAP_MINUTES = 30
-
-TZ_OFFSETS = {
-    "TR": 3, "DE": 1, "FR": 1, "NL": 1, "GB": 0, "US": -5,
-    "CA": -5, "AT": 1, "CZ": 1, "IT": 1, "ES": 1, "SE": 1,
-    "NO": 1, "DK": 1, "FI": 2, "PL": 1, "BE": 1, "CH": 1,
-    "PT": 0, "GR": 2, "RO": 2, "BG": 2, "JP": 9, "KR": 9,
-    "AU": 10, "NZ": 12, "BR": -3, "MX": -6, "AR": -3, "IN": 5,
-}
+from constants import SESSION_GAP_MINUTES, TZ_OFFSETS
+from personality import compute_badges, compute_archetype, compute_level, compute_radar
 
 
 def _entropy(count_dict: dict) -> float:
@@ -333,89 +326,28 @@ def analyze(records: list[dict]) -> dict:
     M = metrics["metrikler"]
     R = metrics["bizim_rapor"]
 
-    badge_defs = [
-        ("night_owl",        "Night Owl",          "Gece dinleme > %25",                          M["night_listening_ratio_pct"] > 25),
-        ("marathon",         "Marathon Listener",   f"Tek oturumda {max_session_h:.1f} saat",      max_session_h >= 4),
-        ("one_track_mind",   "One Track Mind",      f"Bir şarkıyı {top1_song_hours:.0f}+ saat",    top1_song_hours >= 20),
-        ("shuffle_addict",   "Shuffle Addict",      "Shuffle > %80",                               R["shuffle_orani_pct"] > 80),
-        ("album_purist",     "Album Purist",        "Shuffle < %20",                               R["shuffle_orani_pct"] < 20),
-        ("explorer",         "Explorer",            f"{unique_artists:,} benzersiz sanatçı",       unique_artists >= 1000),
-        ("deep_focus",       "Deep Focus",          "Odak skoru > %15",                            M["focus_session_score_pct"] > 15),
-        ("impatient",        "Impatient",           "Erken atlama > %50",                          M["early_skip_rate_pct"] > 50),
-        ("loyal_fan",        "Loyal Fan",           f"{loyal_artists_5yr} sanatçıyı 5+ yıl",      loyal_artists_5yr >= 1),
-        ("ghost",            "Ghost Listener",      f"{incognito_count} gizli dinleme",            incognito_count >= 100),
-        ("world_traveler",   "World Traveler",      f"{len(countries_set)} ülke",                  len(countries_set) >= 3),
-        ("centurion",        "Centurion",           "100.000+ dinleme",                            total_plays >= 100_000),
-        ("dedication",       "Dedication",          "3.000+ saat",                                 total_hours >= 3000),
-        ("offline_warrior",  "Offline Warrior",     "Çevrimdışı > %10",                            R["cevrimdisi_orani_pct"] > 10),
-        ("creature_of_habit","Creature of Habit",   "Alışkanlık > %10",                            M["habit_loop_score_pct"] > 10),
-    ]
-    earned_badges = [{"id": bid, "name": name, "desc": desc, "earned": bool(cond)} for bid, name, desc, cond in badge_defs]
-    earned_count = sum(1 for b in earned_badges if b["earned"])
+    earned_badges, earned_count = compute_badges(
+        M, R,
+        max_session_h=max_session_h,
+        top1_song_hours=top1_song_hours,
+        loyal_artists_5yr=loyal_artists_5yr,
+        countries_set=countries_set,
+        unique_artists=unique_artists,
+        incognito_count=incognito_count,
+        total_hours=total_hours,
+        total_plays=total_plays,
+    )
     metrics["badges"] = earned_badges
     metrics["badges_earned"] = earned_count
-    metrics["badges_total"] = len(badge_defs)
+    metrics["badges_total"] = len(earned_badges)
 
     # ── Level system ──
-    level_thresholds = [
-        (50,   "Casual",        1),
-        (200,  "Listener",      2),
-        (500,  "Enthusiast",    3),
-        (1000, "Devotee",       4),
-        (1500, "Addict",        5),
-        (2000, "Obsessed",      6),
-        (2500, "Maniac",        7),
-        (3000, "Legendary",     8),
-        (4000, "Mythic",        9),
-        (5000, "Transcendent", 10),
-    ]
-    user_level, user_title, next_threshold = 1, "Newbie", 50
-    for threshold, title, lvl in level_thresholds:
-        if total_hours >= threshold:
-            user_level = lvl
-            user_title = title
-        else:
-            next_threshold = threshold
-            break
-    xp = int(total_hours * 10 + earned_count * 50)
-    metrics["level"] = {"level": user_level, "title": user_title, "xp": xp, "next_threshold_hours": next_threshold}
+    metrics["level"] = compute_level(total_hours, earned_count)
 
-    # ── Archetype (rule-based fallback) ──
-    night = M["night_listening_ratio_pct"]
-    imp = M["impatience_score_pct"]
-    expl = M["exploration_score"]
-    focus = M["focus_session_score_pct"]
-    loyalty = M["artist_loyalty_score_pct"]
-    entropy_val = M["artist_diversity_entropy"]
-    novelty = M["music_novelty_rate_pct"]
-
-    if night > 25 and focus > 10:
-        arch = ("The Night Diver", "Gece saatlerinde derinlere dalan, odaklı bir dinleyici.")
-    elif imp > 40 and expl > 12:
-        arch = ("The Restless Explorer", "Sürekli yeni şeyler arıyor, beğenmediklerini anında geçiyor.")
-    elif loyalty > 18 and novelty < 7:
-        arch = ("The Loyal Guardian", "Sevdiği sanatçılara sadık, güvendiği limandan ayrılmıyor.")
-    elif entropy_val > 10 and expl > 8:
-        arch = ("The Eclectic Mind", "Çok geniş bir müzik yelpazesi, türler arası rahatça geziniyor.")
-    elif focus > 12 and imp < 25:
-        arch = ("The Deep Listener", "Sabırlı, odaklı, şarkıları sonuna kadar dinleyen bir ruh.")
-    elif imp > 35 and novelty < 6:
-        arch = ("The Picky Repeater", "Seçici ama keşfetmekten çok tekrar eden.")
-    elif night > 20 and entropy_val > 9:
-        arch = ("The Midnight Wanderer", "Gece saatlerinde farklı türler arasında dolaşan bir gezgin.")
-    else:
-        arch = ("The Balanced Listener", "Dengeli bir dinleyici — keşfetme, sadakat ve sabır arasında denge.")
-
-    metrics["archetype"] = {"name": arch[0], "description": arch[1]}
+    # ── Archetype ──
+    metrics["archetype"] = compute_archetype(M)
 
     # ── Radar ──
-    metrics["radar"] = {
-        "Sabır": round(100 - imp, 1),
-        "Keşif": round(min(expl * 5, 100), 1),
-        "Sadakat": round(min(loyalty * 5, 100), 1),
-        "Odak": round(min(focus * 5, 100), 1),
-        "Çeşitlilik": round(min(entropy_val * 8, 100), 1),
-        "Gece Kuşu": round(min(night * 4, 100), 1),
-    }
+    metrics["radar"] = compute_radar(M)
 
     return metrics

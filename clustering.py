@@ -19,23 +19,7 @@ from sklearn.cluster import KMeans
 from sklearn.metrics import silhouette_score
 from sklearn.preprocessing import StandardScaler
 
-METRIC_KEYS: list[str] = [
-    "impatience_score_pct",
-    "completion_rate_pct",
-    "exploration_score",
-    "artist_diversity_entropy",
-    "early_skip_rate_pct",
-    "listening_intensity_h_per_day",
-    "night_listening_ratio_pct",
-    "mobile_usage_ratio_pct",
-    "focus_session_score_pct",
-    "music_novelty_rate_pct",
-    "artist_loyalty_score_pct",
-    "habit_loop_score_pct",
-    "listening_fragmentation_index",
-    "total_hours",
-    "shuffle_pct",
-]
+from constants import METRIC_KEYS
 
 
 def _vectors_from_rows(rows: list[dict]) -> np.ndarray:

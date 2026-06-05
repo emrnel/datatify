@@ -21,7 +21,8 @@ from pydantic import BaseModel
 
 from analyzer import analyze
 from graph_analysis import analyze_listening_graph
-from clustering import cluster_users, METRIC_KEYS as CLUSTER_METRIC_KEYS
+from clustering import cluster_users
+from constants import METRIC_KEYS, METRIC_LABELS
 
 BASE_DIR = Path(__file__).resolve().parent
 TEMPLATES = BASE_DIR / "templates"
@@ -338,17 +339,6 @@ Yanıtını SADECE aşağıdaki JSON formatında ver (başka metin ekleme):
 
 # ─── Database (benchmark) ────────────────────────────────────────────────────
 
-METRIC_KEYS = [
-    "impatience_score_pct", "completion_rate_pct", "exploration_score",
-    "artist_diversity_entropy", "early_skip_rate_pct",
-    "listening_intensity_h_per_day", "night_listening_ratio_pct",
-    "mobile_usage_ratio_pct", "focus_session_score_pct",
-    "music_novelty_rate_pct", "artist_loyalty_score_pct",
-    "habit_loop_score_pct", "listening_fragmentation_index",
-    "total_hours", "shuffle_pct",
-]
-
-
 class MetricsSubmission(BaseModel):
     impatience_score_pct: float = 0
     completion_rate_pct: float = 0
@@ -391,25 +381,6 @@ def init_db():
 
 
 init_db()
-
-METRIC_LABELS = {
-    "impatience_score_pct": ("Sabırsızlık", "kullanıcıdan daha sabırsız"),
-    "completion_rate_pct": ("Tamamlama", "kullanıcıdan daha fazla şarkı bitiriyor"),
-    "exploration_score": ("Keşif", "kullanıcıdan daha fazla keşfediyor"),
-    "artist_diversity_entropy": ("Çeşitlilik", "kullanıcıdan daha eklektik"),
-    "early_skip_rate_pct": ("Erken Atlama", "kullanıcıdan daha hızlı atlıyor"),
-    "listening_intensity_h_per_day": ("Yoğunluk", "kullanıcıdan daha yoğun dinliyor"),
-    "night_listening_ratio_pct": ("Gece Kuşu", "kullanıcıdan daha çok gece dinliyor"),
-    "mobile_usage_ratio_pct": ("Mobil", "kullanıcıdan daha çok mobil kullanıyor"),
-    "focus_session_score_pct": ("Odak", "kullanıcıdan daha odaklı"),
-    "music_novelty_rate_pct": ("Yenilik", "kullanıcıdan daha çok yeni parça keşfediyor"),
-    "artist_loyalty_score_pct": ("Sadakat", "kullanıcıdan daha sadık"),
-    "habit_loop_score_pct": ("Alışkanlık", "kullanıcıdan daha alışkanlık odaklı"),
-    "listening_fragmentation_index": ("Parçalılık", "kullanıcıdan daha parçalı dinliyor"),
-    "total_hours": ("Toplam Süre", "kullanıcıdan daha çok dinlemiş"),
-    "shuffle_pct": ("Shuffle", "kullanıcıdan daha çok shuffle kullanıyor"),
-}
-
 
 def _generate_labels(percentiles: dict) -> dict:
     labels = {}
@@ -495,7 +466,7 @@ async def analyze_files(files: list[UploadFile] = File(...)):
     try:
         with get_db() as conn:
             rows = [dict(r) for r in conn.execute(
-                f"SELECT {', '.join(CLUSTER_METRIC_KEYS)} FROM submissions"
+                f"SELECT {', '.join(METRIC_KEYS)} FROM submissions"
             ).fetchall()]
         user_vec = {
             "impatience_score_pct": metrics["metrikler"]["impatience_score_pct"],
@@ -587,7 +558,7 @@ def api_cluster():
     """Cluster all submitted benchmark users (no current-user vector)."""
     with get_db() as conn:
         rows = [dict(r) for r in conn.execute(
-            f"SELECT {', '.join(CLUSTER_METRIC_KEYS)} FROM submissions"
+            f"SELECT {', '.join(METRIC_KEYS)} FROM submissions"
         ).fetchall()]
     return cluster_users(rows)
 

@@ -27,26 +27,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-REQUIRED_COLS = [
-    "ts",
-    "ms_played",
-    "master_metadata_track_name",
-    "master_metadata_album_artist_name",
-]
-
-OPTIONAL_COLS = [
-    "master_metadata_album_album_name",
-    "skipped",
-    "shuffle",
-    "reason_start",
-    "reason_end",
-    "conn_country",
-    "platform",
-    "offline",
-    "incognito_mode",
-]
-
-SESSION_GAP_MINUTES = 30
+from constants import REQUIRED_COLS, OPTIONAL_COLS, SESSION_GAP_MINUTES, TZ_OFFSETS
 
 
 def load_json_files(paths: list[str | Path]) -> pd.DataFrame:
@@ -127,14 +108,6 @@ def read_parquet(root: str | Path) -> pd.DataFrame:
 
 
 # ───────────────────────── Metric computation ──────────────────────────────
-
-TZ_OFFSETS = {
-    "TR": 3, "DE": 1, "FR": 1, "NL": 1, "GB": 0, "US": -5,
-    "CA": -5, "AT": 1, "CZ": 1, "IT": 1, "ES": 1, "SE": 1,
-    "NO": 1, "DK": 1, "FI": 2, "PL": 1, "BE": 1, "CH": 1,
-    "PT": 0, "GR": 2, "RO": 2, "BG": 2, "JP": 9, "KR": 9,
-    "AU": 10, "NZ": 12, "BR": -3, "MX": -6, "AR": -3, "IN": 5,
-}
 
 
 def _platform_category(raw: str) -> str:

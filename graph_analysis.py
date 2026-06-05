@@ -23,7 +23,7 @@ from typing import Iterable
 
 import networkx as nx
 
-SESSION_GAP_MINUTES = 30
+from constants import SESSION_GAP_MINUTES
 
 
 def _parse_ts(record: dict) -> datetime | None:
