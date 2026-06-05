@@ -27,7 +27,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from constants import REQUIRED_COLS, OPTIONAL_COLS, SESSION_GAP_MINUTES, TZ_OFFSETS
+from .constants import REQUIRED_COLS, OPTIONAL_COLS, SESSION_GAP_MINUTES, TZ_OFFSETS
 
 
 def load_json_files(paths: list[str | Path]) -> pd.DataFrame:

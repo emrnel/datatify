@@ -1,7 +1,7 @@
 """Integration test: analyzer.analyze() on minimal synthetic records."""
 from datetime import datetime, timezone, timedelta
 
-from analyzer import analyze
+from app.analyzer import analyze
 
 
 def _make_record(ts, artist, track, ms, **kwargs):

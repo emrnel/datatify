@@ -1,4 +1,4 @@
-from constants import (
+from app.constants import (
     TZ_OFFSETS,
     SESSION_GAP_MINUTES,
     METRIC_KEYS,

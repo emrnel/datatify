@@ -17,7 +17,7 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
-ROOT = Path(__file__).resolve().parent
+ROOT = Path(__file__).resolve().parent.parent
 RESULTS = ROOT / "benchmark_results" / "benchmark_results.json"
 OUT_LINEAR = ROOT / "benchmark_results" / "scalability_linear.png"
 OUT_LOG = ROOT / "benchmark_results" / "scalability_loglog.png"

@@ -19,7 +19,7 @@ from sklearn.cluster import KMeans
 from sklearn.metrics import silhouette_score
 from sklearn.preprocessing import StandardScaler
 
-from constants import METRIC_KEYS
+from .constants import METRIC_KEYS
 
 
 def _vectors_from_rows(rows: list[dict]) -> np.ndarray:
