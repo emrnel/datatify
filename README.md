@@ -119,6 +119,7 @@ Spotify JSON upload
 ```text
 datatify/
 |-- app/
+|   |-- __init__.py
 |   |-- main.py             # FastAPI routes and dashboard rendering
 |   |-- analyzer.py         # Core pure-Python listening analysis
 |   |-- constants.py        # Shared constants and metric keys
@@ -136,12 +137,23 @@ datatify/
 |-- templates/
 |   |-- index.html          # Upload page
 |   `-- dashboard.html      # Interactive dashboard
-|-- tests/                  # Unit and integration tests
+|-- tests/
+|   |-- test_constants.py   # 8 tests
+|   |-- test_personality.py # 21 tests
+|   |-- test_analyzer.py    # 9 tests
+|   |-- test_db.py          # 7 tests
+|   |-- test_clustering.py  # 12 tests
+|   `-- test_graph.py       # 13 tests
 |-- docs/
-|   |-- CONTEXT.md          # Maintainer context
-|   `-- datatify-ieee-report-final.tex
+|   |-- CONTEXT.md                      # Maintainer context
+|   |-- datatify-ieee-report-final.tex  # IEEE paper (final)
+|   `-- datatify-ieee-report.tex        # IEEE paper (draft)
 |-- benchmark_results/      # CSV, JSON, and PNG benchmark outputs
 |-- benchmark.db            # Local SQLite benchmark DB
+|-- HANDOFF.md
+|-- MIDTERM_REPORT.md
+|-- PROJECT_PROPOSAL.md
+|-- midterm_report.tex
 |-- Procfile                # Railway process command
 |-- railway.json            # Railway deployment config
 |-- requirements.txt
@@ -252,7 +264,16 @@ Run the test suite:
 python -m pytest tests/ -v
 ```
 
-The tests cover constants, personality classification, core analysis, database operations, clustering edge cases, and graph parsing/analysis.
+70 tests, ~1.7s. No network, no HTTP server.
+
+| File | Count | What |
+|---|---|---|
+| `test_constants.py` | 8 | constant shapes and values |
+| `test_personality.py` | 21 | all 4 pure classification functions |
+| `test_analyzer.py` | 9 | `analyze()` integration on synthetic records |
+| `test_db.py` | 7 | `extract_metric_vector`, `submit`, `compute_percentiles`, `stats`, `all_users` — in-memory SQLite via `tmp_path` + `monkeypatch` |
+| `test_clustering.py` | 12 | `_validate_rows`, `label_cluster` boundaries, `cluster_users` edge cases |
+| `test_graph.py` | 13 | `_parse_artist_timeline` diagnostics, transition graph edges and gaps, `analyze_listening_graph` summary |
 
 ---
 
@@ -302,12 +323,15 @@ Railway uses the Nixpacks builder.
 
 ## Development Notes
 
-- `app/constants.py` is the single source of truth for shared constants such as metric keys, timezone offsets, required Spotify columns, and metric labels.
+- `app/constants.py` is the single source of truth for shared constants: `SESSION_GAP_MINUTES`, `AVG_TRACK_DURATION_SEC`, `TZ_OFFSETS`, `METRIC_KEYS`, metric labels. Never redefine these elsewhere.
 - `app/personality.py` is side-effect free and should stay easy to unit test.
-- `app/db.py` owns SQLite access and the mapping from full analysis output to the 15-key benchmark vector.
+- `app/db.py` owns all SQLite access and the mapping from full analysis output to the 15-key benchmark vector. `extract_metric_vector` is the only place that maps `analyze()` output keys to `METRIC_KEYS`.
 - `app/gemini.py` is self-contained and has no FastAPI dependency.
 - `app/analyzer.py` is the live analysis path; `app/data_pipeline.py` and `app/spark_pipeline.py` are benchmark/reference implementations.
-- `build_artist_transition_graph()` returns both the graph and parse diagnostics; graph callers should preserve those diagnostics in API output.
+- `_aggregate_records()` in `analyzer.py` owns the single-pass accumulator loop. `analyze()` calls it and unpacks the result; nothing else should replicate that loop.
+- `_validate_rows()` in `clustering.py` is always the first call inside `cluster_users()`. If `METRIC_KEYS` changes, the error surfaces here with a clear message rather than deep inside numpy.
+- `render_dashboard()` in `main.py` is the only place that serialises metrics to HTML. The `/analyze` route calls this function instead of doing the string-replace inline.
+- `build_artist_transition_graph()` returns `(G, diagnostics)`; graph callers must unpack the tuple and should surface diagnostics in API output.
 
 ---
 

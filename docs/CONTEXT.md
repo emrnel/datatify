@@ -294,8 +294,8 @@ Run with: `.venv/bin/python -m pytest tests/ -v`
 | `test_personality.py` | 21 | unit tests for all 4 pure functions |
 | `test_analyzer.py` | 9 | integration: `analyze()` on synthetic records |
 | `test_db.py` | 7 | `extract_metric_vector`, `submit`, `compute_percentiles`, `stats`, `all_users` — uses in-memory SQLite via `tmp_path` + `monkeypatch` |
-| `test_clustering.py` | 11 | `_validate_rows`, `label_cluster` boundary tests, `cluster_users` edge cases |
-| `test_graph.py` | 14 | `_parse_artist_timeline` diagnostics, `build_artist_transition_graph` edge/gap/self-loop, `analyze_listening_graph` parse_diagnostics in summary |
+| `test_clustering.py` | 12 | `_validate_rows`, `label_cluster` boundary tests, `cluster_users` edge cases |
+| `test_graph.py` | 13 | `_parse_artist_timeline` diagnostics, `build_artist_transition_graph` edge/gap/self-loop, `analyze_listening_graph` parse_diagnostics in summary |
 
 ---
 
